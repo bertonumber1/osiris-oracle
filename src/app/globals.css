@@ -2637,3 +2637,25 @@ path.oi-graph-in { animation: oi-edge-in 0.9s ease-out both; }
   .vision-lock, .vision-flash, .vision-chip, .vision-grow, .vision-rise { animation: none; }
   .vision-region { transition: none; }
 }
+
+/* Kiosk mode (K, or KIOSK in the map picker): map only. The HUD steps back the
+   same way it does for OI theatre; the Clyde Watch strip and readouts stay. */
+html[data-kiosk] [data-hud],
+html[data-kiosk] [data-map-controls] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.35s ease;
+}
+.kiosk-exit { opacity: 0; transition: opacity 0.4s ease; }
+.kiosk-exit:hover, html[data-kiosk] .kiosk-exit.kiosk-exit--hint { opacity: 1; }
+
+/* Hover names on Clyde Watch symbols: a quiet tag, not a full popup. */
+.clyde-hover .maplibregl-popup-content {
+  background: rgba(8, 11, 20, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 4px 7px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+}
+.clyde-hover .maplibregl-popup-tip { display: none; }

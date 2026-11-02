@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import StyleStudio from './StyleStudio';
 import { TERRAIN_MIN_ZOOM, type TerrainStatus } from '@/lib/map-terrain';
+import { WTR_CATS } from '@/lib/clyde/layer-ids';
 
 interface LayerPanelProps {
   data: any;
@@ -53,6 +54,27 @@ interface LayerGroupDef {
 
 const LAYER_GROUPS: LayerGroupDef[] = [
   {
+    label: 'CLYDE',
+    fullLabel: 'CLYDE WATCH',
+    icon: Radio,
+    layers: [
+      { key: 'clyde_adsb', label: 'Our ADS-B', description: 'Greenock Pi + community feeds · live', dataKey: '' },
+      { key: 'clyde_adsb_labels', label: 'Callsigns', dataKey: '', parent: 'clyde_adsb' },
+      { key: 'clyde_adsb_trails', label: 'Trails', description: 'Coloured by altitude', dataKey: '', parent: 'clyde_adsb' },
+      { key: 'clyde_ais', label: 'Our AIS', description: 'Local aerial + AISHub · live', dataKey: '' },
+      { key: 'clyde_ais_community', label: 'Community Vessels', dataKey: '', parent: 'clyde_ais' },
+      { key: 'clyde_ais_labels', label: 'Ship Names', dataKey: '', parent: 'clyde_ais' },
+      { key: 'clyde_aprs', label: 'APRS', description: 'APRS-IS within 300 km', dataKey: '' },
+      { key: 'clyde_incidents', label: 'SFRS Incidents', description: 'Pager decodes · last 30 days', dataKey: '' },
+      { key: 'clyde_incident_heat', label: 'Heatmap', description: 'All history', dataKey: '', parent: 'clyde_incidents' },
+      { key: 'clyde_stations', label: 'SFRS Stations', dataKey: '' },
+      { key: 'clyde_wtr', label: 'WTR Spectrum', description: 'Ofcom licences · zoom 8+', dataKey: '' },
+      ...WTR_CATS.map(c => ({ key: `wtr_${c.key}`, label: c.label, dataKey: '', parent: 'clyde_wtr' })),
+      { key: 'clyde_rings', label: 'Range Rings', description: '25-200 NM round Greenock', dataKey: '' },
+      { key: 'clyde_navaids', label: 'Aero Navaids', description: 'Beacons + aerodrome frequencies', dataKey: '' },
+    ],
+  },
+  {
     label: 'WEATHER',
     fullLabel: 'WEATHER',
     icon: CloudSun,
@@ -61,6 +83,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
       { key: 'wind', label: 'Wind', description: 'NOAA GFS · surface wind · 6-hourly', dataKey: '' },
       { key: 'wind_controls', label: 'Time Controls', description: '3 days back · 5 ahead', dataKey: '', parent: 'wind' },
       { key: 'wind_particles', label: 'Particles', description: 'The classic look · coloured by speed', dataKey: '', parent: 'wind' },
+      { key: 'clyde_lightning', label: 'Lightning', description: 'Blitzortung via Clyde Watch · last hour', dataKey: '' },
       { key: 'rain', label: 'Rain', description: 'RainViewer radar · every 10 min', dataKey: '' },
       { key: 'rain_controls', label: 'Time Controls', description: 'Last 2 hours · loop', dataKey: '', parent: 'rain' },
     ],
@@ -74,6 +97,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
       { key: 'private', label: 'Private', dataKey: 'private_flights' },
       { key: 'jets', label: 'Private Jets', dataKey: 'private_jets' },
       { key: 'military', label: 'Military', dataKey: 'military_flights' },
+      { key: 'ac_colour_category', label: 'Colour by Category', description: 'Off: coloured by altitude', dataKey: '' },
     ],
   },
   {

@@ -171,7 +171,8 @@ function connectAisStream() {
         existing.lat = report.Latitude;
         existing.lng = report.Longitude;
         existing.speed = report.Sog;
-        existing.heading = report.TrueHeading || report.Cog;
+        // 511 is AIS for "no heading": the course over ground is the better pointer then.
+        existing.heading = report.TrueHeading != null && report.TrueHeading < 360 ? report.TrueHeading : report.Cog;
         existing.timestamp = Date.now();
       } 
       else if (parsed.MessageType === "ShipStaticData" && parsed.Message?.ShipStaticData) {
@@ -179,6 +180,7 @@ function connectAisStream() {
         existing.name = staticData.Name ? staticData.Name.trim() : existing.name;
         existing.destination = staticData.Destination ? staticData.Destination.trim() : existing.destination;
         existing.type = getOsirisShipType(staticData.Type);
+        existing.ship_type = staticData.Type;
       }
 
       // Only store if we have coordinates

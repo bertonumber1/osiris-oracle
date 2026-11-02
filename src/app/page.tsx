@@ -5,6 +5,8 @@ import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Layers, BarChart3, Newspaper, Search, X, Globe, MapPinned, Route, Radar, Satellite, Moon, ExternalLink, AlertTriangle, Activity, Database, Wifi, Play, Network, Crosshair, Bluetooth, Pentagon, Radio , PenLine, Orbit } from 'lucide-react';
 import { type TerrainStatus } from '@/lib/map-terrain';
+import MapPicker from '@/components/clyde/MapPicker';
+import { basemapFor } from '@/lib/clyde/basemaps';
 import { loadCameraCatalog, mergeCameraCatalog } from '@/lib/camera-catalog';
 import IntelFeed from '@/components/IntelFeed';
 import MarketsPanel from '@/components/MarketsPanel';
@@ -115,6 +117,18 @@ function getYouTubeWatchUrl(url: string): string {
   if (url.includes('channel=')) return `https://www.youtube.com/channel/${url.split('channel=')[1].split('&')[0]}/live`;
   if (url.includes('/embed/')) return `https://www.youtube.com/watch?v=${url.split('/embed/')[1].split('?')[0]}`;
   return url;
+}
+
+/** Kiosk's only control: shows for a few seconds on entry, then only on hover. */
+function KioskExit({ onExit }: { onExit: () => void }) {
+  const [hint, setHint] = useState(true);
+  useEffect(() => { const t = setTimeout(() => setHint(false), 3500); return () => clearTimeout(t); }, []);
+  return (
+    <button type="button" onClick={onExit}
+      className={`kiosk-exit ${hint ? 'kiosk-exit--hint' : ''} absolute right-4 top-4 z-[600] rounded-full border border-white/10 bg-black/60 px-3 py-1.5 font-mono text-[9px] tracking-[0.2em] text-white/80 backdrop-blur-md`}>
+      EXIT KIOSK · K
+    </button>
+  );
 }
 
 function ViewSegment({ active, onClick, title, icon: Icon, label, layoutId }: {
@@ -437,7 +451,44 @@ export default function Dashboard() {
   const [terrainFocus, setTerrainFocus] = useState(0);
   const [terrainStatus, setTerrainStatus] = useState<TerrainStatus>('idle');
   const [terrainRetry, setTerrainRetry] = useState(0);
-  const [mapStyle, setMapStyle] = useState<'dark'|'satellite'>('dark');
+  const [mapStyle, setMapStyle] = useState<string>('dark');
+  // Map picker: raster overlays (key -> opacity), the picker itself, and kiosk mode.
+  const [mapOverlays, setMapOverlays] = useState<Record<string, number>>({});
+  const [showMapPicker, setShowMapPicker] = useState(false);
+  const [kiosk, setKiosk] = useState(false);
+  const mapPrefsRestored = useRef(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('osiris.map.v1') || 'null');
+      if (saved?.base && typeof saved.base === 'string') setMapStyle(saved.base);
+      if (saved?.overlays && typeof saved.overlays === 'object') setMapOverlays(saved.overlays);
+    } catch { /* storage blocked */ }
+    mapPrefsRestored.current = true;
+  }, []);
+  useEffect(() => {
+    if (!mapPrefsRestored.current) return;
+    try { localStorage.setItem('osiris.map.v1', JSON.stringify({ base: mapStyle, overlays: mapOverlays })); } catch { /* storage blocked */ }
+  }, [mapStyle, mapOverlays]);
+  /* Kiosk: the browser goes full screen and the HUD steps back (everything marked
+     data-hud), leaving the map, the Clyde Watch strip and any open readout. */
+  const toggleKiosk = useCallback(() => {
+    setKiosk(k => {
+      const next = !k;
+      try {
+        if (next && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+        if (!next && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+      } catch { /* fullscreen refused */ }
+      return next;
+    });
+    setShowMapPicker(false);
+  }, []);
+  useEffect(() => {
+    if (kiosk) document.documentElement.setAttribute('data-kiosk', '');
+    else document.documentElement.removeAttribute('data-kiosk');
+    const onFs = () => { if (!document.fullscreenElement) setKiosk(false); };
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, [kiosk]);
   const [sweepData, setSweepData] = useState<any>(null);
   const [scanTargets, setScanTargets] = useState<any[]>([]);
   const [drawnPolygons, setDrawnPolygons] = useState<DrawnShape[]>([]);
@@ -520,7 +571,44 @@ export default function Dashboard() {
     gdelt_events: false,
     cf_outages: false,
     cf_attacks: false,
+    /* Clyde Watch (pager/radio dashboard on this machine) - see components/clyde. */
+    clyde_adsb: true,
+    clyde_adsb_labels: false,
+    clyde_adsb_trails: false,
+    clyde_ais: true,
+    clyde_ais_community: true,
+    clyde_ais_labels: false,
+    clyde_aprs: false,
+    clyde_incidents: true,
+    clyde_incident_heat: false,
+    clyde_stations: false,
+    clyde_wtr: false,
+    wtr_airwave: true, wtr_business: true, wtr_maritime: true, wtr_fixed: true,
+    wtr_navaid: true, wtr_telemetry: true, wtr_shared: true, wtr_satellite: true,
+    clyde_navaids: false,
+    clyde_lightning: false,
+    clyde_rings: false,
+    ac_colour_category: false,
   });
+  // Layer choices survive a reload: restored once after mount, saved on every change.
+  const layersRestored = useRef(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('osiris.layers.v1') || 'null');
+      if (saved && typeof saved === 'object') {
+        setActiveLayers(prev => {
+          const next: any = { ...prev };
+          for (const k of Object.keys(prev)) if (typeof saved[k] === 'boolean') next[k] = saved[k];
+          return next;
+        });
+      }
+    } catch { /* storage blocked */ }
+    layersRestored.current = true;
+  }, []);
+  useEffect(() => {
+    if (!layersRestored.current) return;
+    try { localStorage.setItem('osiris.layers.v1', JSON.stringify(activeLayers)); } catch { /* storage blocked */ }
+  }, [activeLayers]);
   // ── OI ASSIST ── the conversation, and the page it works: the camera, the
   // layers, the panels, the live data, and what it marks on the map. It lives
   // here, so closing the panel keeps the conversation and its marks.
@@ -819,6 +907,7 @@ export default function Dashboard() {
         else { setShowOi(true); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); }
       }
       if (e.key === 'l') setShowLayers(p => !p);
+      if (e.key === 'k') toggleKiosk();
       if (e.key === 'm') setShowMarkets(p => !p);
       if (e.key === 'c') setShowScmPanel(p => !p);
       if (e.key === 'i') setShowIntel(p => !p);
@@ -1567,7 +1656,8 @@ export default function Dashboard() {
           terrainRetry={terrainRetry}
           onTerrainStatusChange={setTerrainStatus}
           onLayerOff={key => setActiveLayers(prev => ({ ...prev, [key]: false }))}
-          mapStyle={mapStyle === 'satellite' ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' : 'dark'} 
+          mapStyle={mapStyle}
+          overlays={mapOverlays} 
           onEntityClick={handleEntityClick} 
           onMouseCoords={handleMouseCoords} 
           onRightClick={handleRightClick} 
@@ -1718,6 +1808,8 @@ export default function Dashboard() {
         </motion.div>
       )}
 
+      {kiosk && <KioskExit onExit={toggleKiosk} />}
+
       {/* ── MAP VIEW CONTROLS ── */}
       <motion.div
         data-hud
@@ -1731,8 +1823,28 @@ export default function Dashboard() {
           <ViewSegment layoutId="view-projection" active={mapProjection === 'mercator'} onClick={selectFlatMap} title="2D Map" icon={MapPinned} label="2D" />
           <div className="w-px h-5 mx-1 bg-[var(--border-secondary)]" />
           <ViewSegment layoutId="view-style" active={mapStyle === 'dark'} onClick={() => setMapStyle('dark')} title="Night Mode" icon={Moon} label="MAP" />
-          <ViewSegment layoutId="view-style" active={mapStyle === 'satellite'} onClick={() => setMapStyle('satellite')} title="Satellite View" icon={Satellite} label="SAT" />
+          <ViewSegment layoutId="view-style" active={!!basemapFor(mapStyle)?.imagery} onClick={() => setMapStyle(basemapFor(mapStyle)?.imagery ? mapStyle : 'satellite')} title="Satellite View" icon={Satellite} label="SAT" />
+          <ViewSegment layoutId="view-style" active={mapStyle !== 'dark' && !basemapFor(mapStyle)?.imagery} onClick={() => setShowMapPicker(p => !p)} title="Other base maps" icon={MapPinned} label={mapStyle !== 'dark' && !basemapFor(mapStyle)?.imagery ? (basemapFor(mapStyle)?.label || 'MORE').toUpperCase() : 'MORE'} />
+          <div className="w-px h-5 mx-1 bg-[var(--border-secondary)]" />
+          <button type="button" data-map-picker-toggle onClick={() => setShowMapPicker(p => !p)} title="Map layers: bases, overlays, views, kiosk"
+            aria-expanded={showMapPicker}
+            className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-mono font-medium tracking-[0.18em] transition-colors ${showMapPicker || Object.values(mapOverlays).some(v => v > 0) ? 'text-[var(--cyan-primary)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>
+            <Layers className="w-3 h-3" />LAYERS{Object.values(mapOverlays).filter(v => v > 0).length > 0 && <span className="ml-0.5 rounded bg-[var(--cyan-primary)]/20 px-1 text-[8px] tabular-nums">{Object.values(mapOverlays).filter(v => v > 0).length}</span>}
+          </button>
         </div>
+        {showMapPicker && (
+          <div className="pointer-events-auto order-first mb-1.5">
+            <MapPicker base={mapStyle} onBase={setMapStyle} overlays={mapOverlays} onOverlays={setMapOverlays}
+              onKiosk={toggleKiosk} onClose={() => setShowMapPicker(false)}
+              onView={v => {
+                const at = v === 'clyde' ? { lat: 55.93, lng: -4.85, zoom: 10.2 } : v === 'scotland' ? { lat: 57.1, lng: -4.6, zoom: 6.2 } : { lat: 54.6, lng: -4.5, zoom: 5.2 };
+                if (v === 'clyde') setActiveLayers((prev: any) => ({ ...prev, clyde_adsb: true, clyde_ais: true, clyde_incidents: true, clyde_stations: true }));
+                setShowMapPicker(false);
+                setMapProjection('mercator');
+                setFlyToLocation({ ...at, ts: Date.now() });
+              }} />
+          </div>
+        )}
 
 
         {/* Scale Bar */}

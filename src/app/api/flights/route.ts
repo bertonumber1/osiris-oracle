@@ -1,4 +1,5 @@
 
+import { aircraftShape } from '@/lib/clyde/symbols';
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
 
@@ -211,6 +212,8 @@ function classifyFlight(f: any) {
     airline_code: airlineCode,
     aircraft_category: isHeli ? 'heli' : 'plane',
     category,
+    // Clyde Watch silhouette (tar1090 set): picked from the type code, else the emitter category.
+    shape: aircraftShape({ category: typeof f.category === 'string' ? f.category : null, osCategory: f.category_os, type: f.t, kind: isHeli ? 'heli' : category }).shape,
     grounded: isGrounded,
     nac_p: f.nac_p,
     type: 'flight',

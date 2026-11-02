@@ -26,6 +26,12 @@ import { attachTerrain, type TerrainStatus } from '@/lib/map-terrain';
 
 import { applyMapProjection } from '@/lib/map-projection';
 import { attachTransit, type TransitStatus } from '@/lib/transit-layer';
+import { registerSymbols, ICON_SIZE_BY_ZOOM, SHIP_SIZE_BY_ZOOM } from '@/lib/clyde/symbols-draw';
+import { aircraftShape, altKey, shipKind, shipMoving } from '@/lib/clyde/symbols';
+import { AC_SHAPES } from '@/lib/clyde/ac-shapes';
+import ClydeLayers from '@/components/clyde/ClydeLayers';
+import { CLYDE_CLICKABLE } from '@/lib/clyde/layer-ids';
+import { basemapFor, OVERLAYS } from '@/lib/clyde/basemaps';
 
 /** The catalogue fields the satellite layer and its popup actually read. */
 interface SatelliteRow {
@@ -50,7 +56,7 @@ const CLICKABLE_LAYERS: ReadonlySet<string> = new Set(['conflict-icons','cctv-do
   'balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots',
   'sdk-sea','sdk-air','sdk-intel','malware-dots','cyber-heads','gdelt-events-dots',
   'cf-outage-dots','cf-attack-dots','flight-dots','military-dots','jet-dots','private-dots','alert-pin-dots',
-  'transit-coverage-dots']);
+  'transit-coverage-dots', ...CLYDE_CLICKABLE]);
 
 interface OsirisMapProps {
   data: any;
@@ -75,6 +81,8 @@ interface OsirisMapProps {
   onLayerOff?: (key: string) => void;
 
   mapStyle?: string;
+  /** Raster overlays from the map picker: key -> opacity (0 or absent = off). */
+  overlays?: Record<string, number>;
   sweepData?: any;
   scanTargets?: any[];
   demoMode?: boolean;
@@ -201,7 +209,7 @@ interface AlertPinFeature {
   properties: AlertPinProps;
 }
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, onLayerOff, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, onTransitStatus, route = null, userLocation = null, followUser = false, onFollowInterrupt, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, onLayerOff, mapStyle = 'dark', overlays = {}, sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, onTransitStatus, route = null, userLocation = null, followUser = false, onFollowInterrupt, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -448,6 +456,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createIcon(map, 'plane-pink', flightGov, 24);    
       createIcon(map, 'plane-red', flightMil, 24);     
       createIcon(map, 'plane-grey', boot.flightUnknown, 24);
+      // The Clyde Watch symbol set (tar1090 silhouettes, AIS darts) for every aircraft and ship.
+      registerSymbols(map, { commercial: boot.flightCivil, private: boot.flightPrivate, jet: boot.flightGov, military: boot.flightMilitary, unknown: boot.flightUnknown });
       createDot(map, 'dot-gold', isGhost ? phantomPurple : '#D4AF37', 8);
       createDot(map, 'dot-red', isGhost ? phantomPurple : '#D32F2F', 10);
       createDot(map, 'dot-orange', isGhost ? phantomPurple : '#E65100', 10);
@@ -848,9 +858,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       ];
       flightLayers.forEach(l => {
         map.addLayer({ id: l.id, type: 'symbol', source: l.src, layout: {
-          'icon-image': l.icon, 'icon-size': ['interpolate',['linear'],['zoom'], 1,0.4, 5,0.7, 10,1],
-          'icon-rotate': ['get','heading'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
-        }, paint: { 'icon-opacity': 0.85 }});
+          'icon-image': ['coalesce', ['image', ['get','icon']], ['image', l.icon]], 'icon-size': ICON_SIZE_BY_ZOOM,
+          'icon-rotate': ['get','rot'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
+          'symbol-sort-key': ['get','sort'],
+        }, paint: { 'icon-opacity': 0.95 }});
       });
 
       // Route layers are added later (after setMapReady) so they render on top of everything.
@@ -934,11 +945,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       }});
 
       // Maritime Ships (moving entities) — ocean teal family
-      map.addLayer({ id: 'ship-dots', type: 'circle', source: 'maritime-ships', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,2, 5,4, 10,6],
-        'circle-color': ['match', ['get','type'], 'military','#D32F2F', 'tanker','#E65100', 'cargo','#26C6DA', '#B0BEC5'],
-        'circle-opacity': 0.75,
-      }});
+      map.addLayer({ id: 'ship-dots', type: 'symbol', source: 'maritime-ships', layout: {
+        'icon-image': ['get','icon'], 'icon-size': SHIP_SIZE_BY_ZOOM,
+        'icon-rotate': ['get','rot'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
+      }, paint: { 'icon-opacity': 0.92 }});
       map.addLayer({ id: 'ship-label', type: 'symbol', source: 'maritime-ships', minzoom: 5, layout: {
         'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
         'text-offset': [0, 1.2], 'text-allow-overlap': false,
@@ -1875,21 +1885,29 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   // Flight data → GeoJSON (GPU rendered)
   useEffect(() => {
     if (!mapReady) return;
-    const toFeatures = (arr: any[], decimate: number = 1) => {
+    // Coloured by altitude (tar1090) unless the layer panel asks for Osiris's category colours.
+    const byCategory = !!(activeLayers as any).ac_colour_category;
+    const toFeatures = (arr: any[], kind: string, decimate: number = 1) => {
       let filtered = arr || [];
       if (decimate > 1) {
         filtered = filtered.filter((_, i) => i % decimate === 0);
       }
-      return filtered.map((f: any) => ({
-        type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: [f.lng, f.lat] },
-        properties: { callsign: f.callsign, heading: f.heading || 0, alt: f.alt, model: f.model, speed_knots: f.speed_knots, registration: f.registration, icao24: f.icao24 },
-      }));
+      return filtered.map((f: any) => {
+        const shape = f.shape || aircraftShape({ type: f.model, kind: f.aircraft_category === 'heli' ? 'heli' : kind }).shape;
+        const ft = f.grounded ? 0 : (typeof f.alt === 'number' && f.alt > 0 ? f.alt * 3.28084 : null);
+        const ck = byCategory ? 'c-' + kind : altKey(ft);
+        return {
+          type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: [f.lng, f.lat] },
+          properties: { callsign: f.callsign, heading: f.heading || 0, alt: f.alt, model: f.model, speed_knots: f.speed_knots, registration: f.registration, icao24: f.icao24,
+            icon: `ac:${shape}:${ck}`, rot: AC_SHAPES[shape]?.noRotate ? 0 : (f.heading || 0), sort: ft ?? 0 },
+        };
+      });
     };
-    setGeo('flights', activeLayers.flights ? toFeatures(data.commercial_flights, 10) : []);
-    setGeo('private-fl', activeLayers.private ? toFeatures(data.private_flights, 2) : []);
-    setGeo('jets', activeLayers.jets ? toFeatures(data.private_jets, 2) : []);
-    setGeo('military', activeLayers.military ? toFeatures(data.military_flights) : []);
-  }, [mapReady, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military]);
+    setGeo('flights', activeLayers.flights ? toFeatures(data.commercial_flights, 'commercial', 10) : []);
+    setGeo('private-fl', activeLayers.private ? toFeatures(data.private_flights, 'private', 2) : []);
+    setGeo('jets', activeLayers.jets ? toFeatures(data.private_jets, 'jet', 2) : []);
+    setGeo('military', activeLayers.military ? toFeatures(data.military_flights, 'military') : []);
+  }, [mapReady, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military, (activeLayers as any).ac_colour_category]);
 
   /**
    * Pull the palette out of the document whenever it can have changed.
@@ -1948,6 +1966,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       updateMapIcon('plane-pink', palette.flightGov, 24);
       updateMapIcon('plane-red', palette.flightMilitary, 24);
       updateMapIcon('plane-grey', palette.flightUnknown, 24);
+      registerSymbols(map, { commercial: palette.flightCivil, private: palette.flightPrivate, jet: palette.flightGov, military: palette.flightMilitary, unknown: palette.flightUnknown });
     }, [mapReady, palette]);
 
   // OI's arcs take their three tones from the Style Studio (violet, magenta, indigo unless changed).
@@ -2232,7 +2251,12 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     if (!mapReady) return;
     setGeo('maritime', activeLayers.maritime && data.maritime_ports ? data.maritime_ports.map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { name: p.name, country: p.country, type: p.type, volume: p.volume, fleet: p.fleet, rank: p.rank } })) : []);
     setGeo('maritime-choke', activeLayers.maritime && data.maritime_chokepoints ? data.maritime_chokepoints.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, traffic: c.traffic, risk: c.risk } })) : []);
-    setGeo('maritime-ships', activeLayers.maritime && data.maritime_ships ? data.maritime_ships.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name || s.mmsi?.toString(), type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag } })) : []);
+    setGeo('maritime-ships', activeLayers.maritime && data.maritime_ships ? data.maritime_ships.map((s: any) => {
+      const kind = s.type === 'military' ? 'military' : s.ship_type != null ? shipKind(s.ship_type) : s.type === 'tanker' ? 'tanker' : s.type === 'cargo' ? 'cargo' : 'other';
+      const moving = shipMoving(s.speed, s.heading);
+      return { type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { mmsi: Number(s.mmsi) || 0, name: s.name || s.mmsi?.toString(), type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag,
+        icon: `ship:${kind}:${moving ? 'm' : 's'}`, rot: moving ? s.heading : 0 } };
+    }) : []);
   }, [mapReady, data.maritime_ports, data.maritime_chokepoints, data.maritime_ships, activeLayers.maritime, setGeo]);
 
   useEffect(() => {
@@ -2675,36 +2699,62 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     }
   }, [mapReady, activeLayers.terrain_3d]);
 
-  // Satellite / Dark style switching
+  // Base map switching: Osiris's vector night style, or any raster from the picker drawn over it.
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
     const map = mapRef.current;
 
     try {
-      if (mapStyle !== 'dark') {
-        // Add satellite raster tiles
+      const base = basemapFor(mapStyle);
+      const src = map.getSource('satellite-tiles') as any;
+      if (src && base && src.__baseKey !== base.key) {
+        if (map.getLayer('satellite-layer')) map.removeLayer('satellite-layer');
+        map.removeSource('satellite-tiles');
+      }
+      if (base) {
         if (!map.getSource('satellite-tiles')) {
-          map.addSource('satellite-tiles', {
-            type: 'raster',
-            tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-            tileSize: 256,
-            maxzoom: 18,
-          });
+          map.addSource('satellite-tiles', { type: 'raster', tiles: base.tiles, tileSize: 256, maxzoom: base.maxzoom, attribution: base.attribution });
+          (map.getSource('satellite-tiles') as any).__baseKey = base.key;
         }
         if (!map.getLayer('satellite-layer')) {
-          map.addLayer({ id: 'satellite-layer', type: 'raster', source: 'satellite-tiles', paint: { 'raster-opacity': 0.85 } }, 'day-night-fill');
+          map.addLayer({ id: 'satellite-layer', type: 'raster', source: 'satellite-tiles', paint: { 'raster-opacity': base.imagery ? 0.9 : 1, 'raster-fade-duration': 180 } },
+            ['hillshade', 'rail', 'roads', 'seamarks', 'labels'].map(k => `clyde-ovl-${k}`).find(id => map.getLayer(id)) || 'day-night-fill');
         } else {
           map.setLayoutProperty('satellite-layer', 'visibility', 'visible');
         }
-      } else {
-        if (map.getLayer('satellite-layer')) {
-          map.setLayoutProperty('satellite-layer', 'visibility', 'none');
-        }
+      } else if (map.getLayer('satellite-layer')) {
+        map.setLayoutProperty('satellite-layer', 'visibility', 'none');
       }
     } catch (e) {
       console.warn('Style switch failed:', e);
     }
   }, [mapReady, mapStyle]);
+
+  // Raster overlays (place names, roads, seamarks, rail, hillshade): over the base, under every data layer.
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    try {
+      for (const o of OVERLAYS) {
+        const id = `clyde-ovl-${o.key}`;
+        const op = overlays[o.key] || 0;
+        if (op > 0) {
+          if (!map.getSource(id)) map.addSource(id, { type: 'raster', tiles: o.tiles, tileSize: 256, maxzoom: o.maxzoom, attribution: o.attribution });
+          if (!map.getLayer(id)) map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': op, 'raster-fade-duration': 180 } }, 'day-night-fill');
+          else { map.setLayoutProperty(id, 'visibility', 'visible'); map.setPaintProperty(id, 'raster-opacity', op); }
+        } else if (map.getLayer(id)) {
+          map.setLayoutProperty(id, 'visibility', 'none');
+        }
+      }
+      // Stack them bottom to top: relief first, names last, all just under the night shade.
+      for (const k of ['hillshade', 'rail', 'roads', 'seamarks', 'labels']) {
+        const id = `clyde-ovl-${k}`;
+        if (map.getLayer(id) && map.getLayer('day-night-fill')) map.moveLayer(id, 'day-night-fill');
+      }
+    } catch (e) {
+      console.warn('Overlay switch failed:', e);
+    }
+  }, [mapReady, overlays]);
 
   // Live Clouds — NOAA's satellite mosaic, hung at cloud altitude over the
   // ground; see lib/live-clouds-layer. Under the night shade and every marker.
@@ -3477,6 +3527,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       )}
       {selectedSat && <SatelliteCard sat={selectedSat} onClose={clearSat} />}
       {mapReady && <MapControls mapRef={mapRef} onInteract={onFollowInterrupt} />}
+      <ClydeLayers mapRef={mapRef} mapReady={mapReady} active={activeLayers} />
       {mapReady && (activeLayers.wind || activeLayers.rain) && (
         <div className={DOCK}>
           {activeLayers.wind && <WindBar mapRef={mapRef} controls={!!activeLayers.wind_controls} particles={!!activeLayers.wind_particles} onOff={() => onLayerOff?.('wind')} />}
