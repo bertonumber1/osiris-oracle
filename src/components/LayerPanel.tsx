@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, memo, useEffect, useState } from 'react';
+import { Fragment, memo, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plane, Satellite, Sun, AlertTriangle, Camera,
@@ -269,11 +269,15 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
   const [pinnedGroup, setPinnedGroup] = useState<string | null>(null);
   const [studioOpen, setStudioOpen] = useState(false);
 
+  const railRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!pinnedGroup) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPinnedGroup(null); };
+    // A click anywhere outside the rail and its flyout closes a pinned flyout.
+    const onDown = (e: PointerEvent) => { if (railRef.current && !railRef.current.contains(e.target as Node)) setPinnedGroup(null); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('pointerdown', onDown, true);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('pointerdown', onDown, true); };
   }, [pinnedGroup]);
 
   const toggle = (key: string) => {
@@ -434,6 +438,7 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
   /* ── DESKTOP ── */
   return (
     <motion.div
+      ref={railRef}
       initial={{ x: -60, opacity: 0 }}
       animate={revealed ? { x: 0, opacity: 1 } : { x: -60, opacity: 0 }}
       transition={{ type: 'spring', damping: 30, stiffness: 200, delay: 0.25 }}
@@ -539,15 +544,13 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
                       >
                         {activeCount > 0 ? 'NONE' : 'ALL'}
                       </button>
-                      {isPinned && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setPinnedGroup(null); }}
-                          aria-label="Close"
-                          className="px-1.5 py-0.5 rounded text-[10px] font-mono text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-                        >
-                          ✕
-                        </button>
-                      )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setPinnedGroup(null); setHoveredGroup(null); }}
+                        aria-label="Close" title="Close (Esc)"
+                        className="ml-0.5 flex h-5 w-5 items-center justify-center rounded border border-white/15 text-[11px] font-mono text-white/70 hover:border-white/40 hover:text-white hover:bg-white/10 transition-colors"
+                      >
+                        ✕
+                      </button>
                     </div>
                     <div className="flex flex-col gap-0.5">
                       {group.layers.map((layer) => {
