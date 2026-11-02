@@ -62,7 +62,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     fullLabel: 'CLYDE WATCH',
     icon: Radio,
     layers: [
-      { key: 'clyde_adsb', label: 'Our ADS-B', description: 'Greenock Pi + community · AVIATION switches apply', dataKey: '' },
+      { key: 'clyde_adsb', label: 'Our ADS-B', description: 'Greenock Pi + community · AVIATION types filter it when any are on', dataKey: '' },
       { key: 'clyde_adsb_labels', label: 'Callsigns', dataKey: '', parent: 'clyde_adsb' },
       { key: 'clyde_adsb_trails', label: 'Trails', description: 'Coloured by altitude', dataKey: '', parent: 'clyde_adsb' },
       { key: 'clyde_ais', label: 'Our AIS', description: 'Local aerial + AISHub worldwide · live', dataKey: '' },
@@ -88,9 +88,14 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     layers: [
       { key: 'psk', label: 'PSK Reporter', description: 'Your callsign\'s spots · radius round IO75OW', dataKey: '' },
       { key: 'psk_world', label: 'Worldwide Activity', description: 'Transmitting stations per grid', dataKey: '', parent: 'psk' },
-      { key: 'wx_sats', label: 'Weather Satellites', description: 'Live + passes over Greenock', dataKey: '' },
-      { key: 'ham_sats', label: 'ISS + Amateur Sats', description: 'Live + passes', dataKey: '' },
-      { key: 'sat_tracks', label: 'Tracks + Footprints', dataKey: '' },
+      { key: 'wx_sats', label: 'Weather Sats', description: 'Meteor · NOAA · MetOp · over the UK + passes', dataKey: '' },
+      { key: 'ham_sats', label: 'ISS + Amateur', description: 'Over the UK + passes', dataKey: '' },
+      { key: 'sat_starlink', label: 'Starlink', description: 'Over the UK', dataKey: '' },
+      { key: 'sat_iridium', label: 'Iridium', description: 'Over the UK', dataKey: '' },
+      { key: 'sat_gnss', label: 'GPS + Galileo', description: 'In our sky · bearing/elevation', dataKey: '' },
+      { key: 'sat_geo', label: 'Geostationary', description: 'In our sky (Clarke belt)', dataKey: '' },
+      { key: 'sat_inmarsat', label: 'Inmarsat', description: 'In our sky · L-band', dataKey: '' },
+      { key: 'sat_tracks', label: 'Tracks + Footprints', description: 'Weather + ISS', dataKey: '' },
     ],
   },
   {
@@ -112,7 +117,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     fullLabel: 'AVIATION',
     icon: Plane,
     layers: [
-      { key: 'flights', label: 'Commercial', description: 'Airlines + cargo · every feed, ours too', dataKey: 'commercial_flights' },
+      { key: 'flights', label: 'Commercial', description: 'Airlines + cargo · worldwide; also filters ours', dataKey: 'commercial_flights' },
       { key: 'private', label: 'Private', dataKey: 'private_flights' },
       { key: 'jets', label: 'Private Jets', dataKey: 'private_jets' },
       { key: 'military', label: 'Military', dataKey: 'military_flights' },

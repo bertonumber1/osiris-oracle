@@ -244,6 +244,7 @@ export default function ClydeLayers({ mapRef, mapReady, active }: Props) {
     const a = activeRef.current;
     const labels = !!a.clyde_adsb_labels;
     const selHex = selRef.current?.kind === 'ac' ? selRef.current.id : null;
+    const catFilter = Object.values(CAT_SWITCH).some(k => !!a[k]);
     const feats: GeoJSON.Feature[] = [];
     for (const p of aircraft.current.values()) {
       let { lat, lon } = p;
@@ -255,9 +256,10 @@ export default function ClydeLayers({ mapRef, mapReady, active }: Props) {
         lat += (nm / 60) * Math.cos(r);
         lon += ((nm / 60) * Math.sin(r)) / Math.max(0.2, Math.cos((lat * Math.PI) / 180));
       }
-      // Osiris's AVIATION switches (Commercial / Private / Private Jets / Military) apply to our aircraft too.
+      // Osiris's AVIATION switches (Commercial / Private / Private Jets / Military) filter our aircraft
+      // too, but only once at least one is on: Osiris starts with all four off, which must not hide ours.
       const cat = flightCategory(p.raw);
-      if (a[CAT_SWITCH[cat]] === false) continue;
+      if (catFilter && !a[CAT_SWITCH[cat]]) continue;
       const { shape } = aircraftShape({ category: p.raw.category, type: p.raw.t });
       const ck = a.ac_colour_category ? `c-${cat}` : altKey(p.alt as any);
       const sq = String(p.raw.squawk || '');

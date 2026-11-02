@@ -599,6 +599,11 @@ export default function Dashboard() {
     wx_sats: false,
     ham_sats: false,
     sat_tracks: true,
+    sat_starlink: false,
+    sat_iridium: false,
+    sat_gnss: false,
+    sat_geo: false,
+    sat_inmarsat: false,
     ac_colour_category: false,
   });
   // Layer choices survive a reload: restored once after mount, saved on every change.

@@ -10,7 +10,8 @@ import type { Map as MlMap, GeoJSONSource, Popup as MlPopup } from 'maplibre-gl'
 import * as maplibregl from 'maplibre-gl';
 import type { SatRec } from '@/lib/radio/sgp4';
 import { BAND_COLOR, BANDS, distanceKm } from '@/lib/radio/maidenhead';
-import { footprint, groundTrack, makeRec, predict, subPoint, unwrap, type Pass, type SatDef } from '@/lib/radio/passes';
+import { footprint, groundTrack, lookAt, makeRec, predict, subPoint, unwrap, type Pass, type SatDef } from '@/lib/radio/passes';
+import { registerSatIcons } from '@/lib/radio/sat-icons';
 import PskBar from './PskBar';
 import PassPanel from './PassPanel';
 
@@ -19,7 +20,20 @@ interface Props { mapRef: React.RefObject<MlMap | null>; mapReady: boolean; acti
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 const fc = (features: GeoJSON.Feature[]): GeoJSON.FeatureCollection => ({ type: 'FeatureCollection', features });
-const KIND_COLOR: Record<string, string> = { wx: '#38bdf8', iss: '#fbbf24', ham: '#a3e635' };
+const KIND_COLOR: Record<string, string> = {
+  wx: '#38bdf8', iss: '#fbbf24', ham: '#a3e635', gnss: '#f472b6', starlink: '#e2e8f0',
+  iridium: '#c084fc', geo: '#fb923c', inmarsat: '#f43f5e',
+};
+/** The panel switch for each kind. */
+const KIND_SWITCH: Record<string, string> = {
+  wx: 'wx_sats', iss: 'ham_sats', ham: 'ham_sats', gnss: 'sat_gnss', starlink: 'sat_starlink',
+  iridium: 'sat_iridium', geo: 'sat_geo', inmarsat: 'sat_inmarsat',
+};
+/** Kinds that never pass overhead: shown while above our horizon instead. */
+const HIGH_KINDS = new Set(['gnss', 'geo', 'inmarsat']);
+const MIN_EL = 5;
+/** UK & Ireland box (Channel Islands to Shetland, Kerry to the Norfolk coast), widened by m degrees. */
+const inUk = (lat: number, lon: number, m: number) => lat >= 49 - m && lat <= 61.2 + m && lon >= -11.5 - m && lon <= 2.5 + m;
 const PSK_MINUTES = 15;
 
 export interface PskData {
@@ -65,7 +79,7 @@ function arc(a: [number, number], b: [number, number], n = 24): [number, number]
 
 export default function RadioLayers({ mapRef, mapReady, active }: Props) {
   const pskOn = !!active.psk;
-  const satsOn = !!active.wx_sats || !!active.ham_sats;
+  const satsOn = Object.values(KIND_SWITCH).some(k => !!active[k]);
 
   /* ── PSK state ── */
   const [call, setCall] = useState<string>(() => store('osiris.psk.call', 'MM7BVP'));
@@ -116,11 +130,15 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
     add({ id: 'rs-track', type: 'line', source: 'rs-track', layout: { 'line-cap': 'round' }, paint: {
       'line-color': ['get', 'c'], 'line-opacity': 0.55, 'line-width': 1.4, 'line-dasharray': [1, 2.2] } });
     add({ id: 'rs-pass', type: 'line', source: 'rs-pass', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': 3, 'line-opacity': 0.9, 'line-blur': 0.5 } });
-    add({ id: 'rs-sat-glow', type: 'circle', source: 'rs-sat', paint: { 'circle-radius': ['case', ['==', ['get', 'big'], 1], 16, 8], 'circle-color': ['get', 'c'], 'circle-opacity': 0.18, 'circle-blur': 0.8 } });
-    add({ id: 'rs-sat', type: 'circle', source: 'rs-sat', paint: {
-      'circle-radius': ['case', ['==', ['get', 'big'], 1], 5.5, 3], 'circle-color': ['get', 'c'], 'circle-stroke-color': '#0b1020', 'circle-stroke-width': 1.2 } });
-    add({ id: 'rs-sat-label', type: 'symbol', source: 'rs-sat', filter: ['any', ['==', ['get', 'big'], 1], ['>=', ['zoom'], 4]], layout: {
-      ...T, 'text-field': ['get', 'name'], 'text-size': ['case', ['==', ['get', 'big'], 1], 10.5, 9], 'text-offset': [0, 1.2], 'text-anchor': 'top' },
+    add({ id: 'rs-sat-glow', type: 'circle', source: 'rs-sat', paint: { 'circle-radius': ['case', ['==', ['get', 'big'], 1], 18, 10], 'circle-color': ['get', 'c'], 'circle-opacity': 0.16, 'circle-blur': 0.8 } });
+    registerSatIcons(map, KIND_COLOR);
+    add({ id: 'rs-sat', type: 'symbol', source: 'rs-sat', layout: {
+      'icon-image': ['concat', 'rsat:', ['get', 'k']],
+      // A little smaller than the aircraft (airliners draw ~40 px): satellites ~30 px across.
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 1, 0.75, 4, 0.9, 6, 1],
+      'icon-allow-overlap': true, 'icon-ignore-placement': true } });
+    add({ id: 'rs-sat-label', type: 'symbol', source: 'rs-sat', filter: ['any', ['==', ['get', 'big'], 1], ['all', ['>=', ['zoom'], 6], ['!=', ['get', 'k'], 'starlink']], ['>=', ['zoom'], 8]], layout: {
+      ...T, 'text-field': ['get', 'name'], 'text-size': ['case', ['==', ['get', 'big'], 1], 10.5, 9], 'text-offset': [0, 1.4], 'text-anchor': 'top' },
       paint: { 'text-color': ['get', 'c'], ...HALO } });
   }, [mapReady, mapRef]);
 
@@ -223,12 +241,15 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
     return () => ac.abort();
   }, [mapReady, satsOn, defs.length]);
 
-  const shown = useMemo(() => defs.filter(s => (s.kind === 'ham' ? active.ham_sats : s.kind === 'iss' ? active.ham_sats || active.wx_sats : active.wx_sats)),
-    [defs, active.ham_sats, active.wx_sats]);
+  const shown = useMemo(() => defs.filter(s => !!active[KIND_SWITCH[s.kind]] || (s.kind === 'iss' && !!active.wx_sats)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [defs, ...Object.values(KIND_SWITCH).map(k => active[k]), active.wx_sats]);
+  // The pass predictor covers the weather birds, the ISS and the amateur fleet only.
+  const passSats = useMemo(() => shown.filter(s => s.kind === 'wx' || s.kind === 'iss' || s.kind === 'ham'), [shown]);
 
   // Passes: weather and ISS over 24 h at a 30 s step, the amateur fleet over 12 h at 60 s. Worked out in slices so the map never stutters.
   useEffect(() => {
-    if (!satsOn || !shown.length) { setPasses([]); return; }
+    if (!satsOn || !passSats.length) { setPasses([]); return; }
     let cancelled = false;
     const run = () => {
       const now = Date.now();
@@ -237,12 +258,12 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
       const step = () => {
         if (cancelled) return;
         const t0 = performance.now();
-        while (i < shown.length && performance.now() - t0 < 12) {
-          const s = shown[i++], rec = recs.current.get(s.name);
+        while (i < passSats.length && performance.now() - t0 < 12) {
+          const s = passSats[i++], rec = recs.current.get(s.name);
           if (!rec) continue;
           all.push(...(s.kind === 'ham' ? predict(s, rec, now, 12, 60, 15) : predict(s, rec, now, 24, 30, 8)));
         }
-        if (i < shown.length) setTimeout(step, 0);
+        if (i < passSats.length) setTimeout(step, 0);
         else setPasses(all.sort((a, b) => a.aos - b.aos));
       };
       step();
@@ -250,41 +271,78 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
     run();
     const iv = setInterval(run, 10 * 60 * 1000);
     return () => { cancelled = true; clearInterval(iv); };
-  }, [satsOn, shown]);
+  }, [satsOn, passSats]);
 
-  // Live positions every 2 s; tracks and footprints every 30 s.
+  /* Only what is over the UK:
+     - low orbits (weather, ISS, amateur, Starlink, Iridium) while their sub-point
+       is inside the UK & Ireland box;
+     - GPS / Galileo / geostationary / Inmarsat, which never pass overhead, while
+       they are above the horizon at Greenock (in our sky), drawn at their
+       sub-point with bearing and elevation in the label.
+     Every 30 s a sliced sweep of the whole catalogue (~11k) picks candidates in a
+     wider box; every 2 s only those are moved. */
+  const cands = useRef<SatDef[]>([]);
   useEffect(() => {
-    if (!mapReady || !satsOn || !shown.length) { setData('rs-sat', EMPTY); setData('rs-track', EMPTY); setData('rs-foot', EMPTY); return; }
-    const big = (s: SatDef) => s.kind !== 'ham' || s.name === selPass?.name;
+    if (!mapReady || !satsOn || !shown.length) { cands.current = []; setData('rs-sat', EMPTY); setData('rs-track', EMPTY); setData('rs-foot', EMPTY); return; }
+    let cancelled = false;
+    const big = (s: SatDef) => s.kind === 'wx' || s.kind === 'iss' || s.name === selPass?.name;
+    const label = (s: SatDef) => s.name.replace(/\s*\(.*\)$/, '');
     const pos = () => {
       if (document.hidden) return;
       const d = new Date();
       const feats: GeoJSON.Feature[] = [];
-      for (const s of shown) {
-        const p = subPoint(recs.current.get(s.name)!, d);
+      const list = selPass && !cands.current.some(s => s.name === selPass.name) ? [...cands.current, ...shown.filter(s => s.name === selPass.name)] : cands.current;
+      for (const s of list) {
+        const rec = recs.current.get(s.name)!;
+        const p = subPoint(rec, d);
         if (!p) continue;
+        let name = label(s);
+        if (HIGH_KINDS.has(s.kind)) {
+          const la = lookAt(rec, d);
+          if (!la || la.el < MIN_EL) continue;
+          name += ` ${Math.round(la.az)}°/${Math.round(la.el)}°`;
+        } else if (!inUk(p.lat, p.lon, 0) && s.name !== selPass?.name) continue;
         feats.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-          properties: { name: s.name.replace(/\s*\(.*\)$/, ''), c: KIND_COLOR[s.kind], big: big(s) ? 1 : 0 } });
+          properties: { name, c: KIND_COLOR[s.kind], k: s.kind, big: big(s) ? 1 : 0 } });
       }
       setData('rs-sat', fc(feats));
+    };
+    const sweep = () => {
+      const d = new Date();
+      const out: SatDef[] = [];
+      let i = 0;
+      const step = () => {
+        if (cancelled) return;
+        const t0 = performance.now();
+        while (i < shown.length && performance.now() - t0 < 10) {
+          const s = shown[i++], rec = recs.current.get(s.name);
+          if (!rec) continue;
+          if (HIGH_KINDS.has(s.kind)) { const la = lookAt(rec, d); if (la && la.el >= MIN_EL - 2) out.push(s); }
+          else { const p = subPoint(rec, d); if (p && inUk(p.lat, p.lon, 6)) out.push(s); }
+        }
+        if (i < shown.length) setTimeout(step, 0);
+        else { cands.current = out; pos(); slow(); }
+      };
+      step();
     };
     const slow = () => {
       if (document.hidden) return;
       const now = Date.now();
       const tracks: GeoJSON.Feature[] = [], foots: GeoJSON.Feature[] = [];
-      for (const s of shown) {
+      for (const s of cands.current) {
         if (!big(s)) continue;
         const rec = recs.current.get(s.name)!;
-        tracks.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: groundTrack(rec, now, s.kind === 'iss' ? 92 : 100) }, properties: { c: KIND_COLOR[s.kind] } });
         const p = subPoint(rec, new Date(now));
-        if (p) foots.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [footprint(p.lat, p.lon, p.altKm)] }, properties: { c: KIND_COLOR[s.kind] } });
+        if (!p || !inUk(p.lat, p.lon, 0)) continue;
+        tracks.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: groundTrack(rec, now, s.kind === 'iss' ? 92 : 100) }, properties: { c: KIND_COLOR[s.kind] } });
+        foots.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [footprint(p.lat, p.lon, p.altKm)] }, properties: { c: KIND_COLOR[s.kind] } });
       }
       setData('rs-track', fc(tracks));
       setData('rs-foot', fc(foots));
     };
-    pos(); slow();
-    const a = setInterval(pos, 2000), b = setInterval(slow, 30000);
-    return () => { clearInterval(a); clearInterval(b); };
+    sweep();
+    const a = setInterval(pos, 2000), b = setInterval(() => { if (!document.hidden) sweep(); }, 30000);
+    return () => { cancelled = true; clearInterval(a); clearInterval(b); };
   }, [mapReady, satsOn, shown, selPass, setData]);
 
   useEffect(() => {

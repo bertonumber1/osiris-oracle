@@ -6,7 +6,7 @@ import { twoline2satrec, propagate, gstime, eciToGeodetic, eciToEcf, ecfToLookAn
 export const QTH = { lat: 55.9587, lon: -4.7656, altKm: 0.03, name: 'GREENOCK' };
 const D2R = Math.PI / 180, R2D = 180 / Math.PI, RE = 6371;
 
-export interface SatDef { name: string; l1: string; l2: string; kind: 'wx' | 'iss' | 'ham'; down?: string }
+export interface SatDef { name: string; l1: string; l2: string; kind: 'wx' | 'iss' | 'ham' | 'gnss' | 'starlink' | 'iridium' | 'geo' | 'inmarsat'; down?: string }
 export interface Pass {
   key: string; name: string; kind: SatDef['kind']; down?: string;
   aos: number; los: number; tca: number; maxEl: number; aosAz: number; losAz: number;

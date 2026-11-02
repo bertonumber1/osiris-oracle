@@ -98,7 +98,8 @@ void main() {
   vec4 clip = projectTileFor3D(a_pos.xy, a_pos.z);
   // Shrink with distance so a dense catalogue does not turn the globe into a
   // solid sheet of dots when zoomed out.
-  float px = clamp(a_size * 260.0 / max(clip.w, 0.0001), 2.5, 16.0);
+  // Osiris - Oracle: a little larger, so the spacecraft shape drawn in FRAG reads.
+  float px = clamp(a_size * 330.0 / max(clip.w, 0.0001), 5.0, 18.0);
   // One satellite out of nineteen thousand is invisible unless it is told to
   // stand out; the selected one gets size and a ring.
   v_hot = gl_InstanceID == u_selected ? 1.0 : 0.0;
@@ -116,20 +117,34 @@ in vec2 v_corner;
 in vec3 v_color;
 in float v_hot;
 out vec4 fragColor;
+// Osiris - Oracle: a spacecraft rather than a dot. Body, boom and two solar
+// panels in the unit quad; 'g' grows the shape for the dark outline.
+float body(vec2 p, float g)  { return step(abs(p.x), 0.22 + g) * step(abs(p.y), 0.34 + g); }
+float panel(vec2 p, float g) { return step(abs(p.y), 0.30 + g) * step(0.36 - g, abs(p.x)) * step(abs(p.x), 0.98 + g); }
+float boom(vec2 p, float g)  { return step(abs(p.y), 0.05 + g) * step(abs(p.x), 0.40); }
 void main() {
-  // Round the marker off inside the quad; square satellites read as dead
-  // pixels rather than objects.
-  float r = length(v_corner);
-  if (r > 1.0) discard;
+  vec2 p = v_corner;
+  float r = length(p);
   if (v_hot > 0.5) {
-    // A bright ring rather than a bigger blob — a blob just looks like a
-    // closer satellite, a ring reads as a selection.
-    float ring = smoothstep(0.55, 0.75, r) * smoothstep(1.0, 0.85, r);
-    vec3 c = mix(v_color, vec3(1.0), 0.55);
-    fragColor = vec4(c, max(ring, smoothstep(0.45, 0.0, r)) * 0.95);
-    return;
+    // A bright ring rather than a bigger blob, around the craft.
+    float ring = smoothstep(0.80, 0.90, r) * smoothstep(1.0, 0.93, r);
+    if (ring > 0.05) { fragColor = vec4(mix(v_color, vec3(1.0), 0.6), ring); return; }
+    p *= 1.25;   // the craft sits inside the ring
   }
-  fragColor = vec4(v_color, smoothstep(1.0, 0.55, r));
+  float b = body(p, 0.0), pa = panel(p, 0.0), bm = boom(p, 0.0);
+  float shape = max(b, max(pa, bm));
+  float outline = max(body(p, 0.12), max(panel(p, 0.12), boom(p, 0.10)));
+  if (outline < 0.5) discard;
+  if (shape < 0.5) { fragColor = vec4(0.02, 0.03, 0.06, 0.85); return; }
+  vec3 c;
+  if (b > 0.5) c = mix(v_color, vec3(1.0), 0.55);                 // bus: pale
+  else if (bm > 0.5 && pa < 0.5) c = vec3(0.75);                    // boom: grey
+  else {
+    // Panels in the category colour with dark cell lines.
+    float cells = step(0.82, fract((abs(p.x) - 0.36) * 4.6)) + step(abs(p.y), 0.03);
+    c = mix(v_color, vec3(0.04, 0.06, 0.12), clamp(cells, 0.0, 1.0) * 0.7);
+  }
+  fragColor = vec4(c, 1.0);
 }`;
 
 /**
