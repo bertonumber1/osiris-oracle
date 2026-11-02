@@ -91,6 +91,7 @@ export function registerSymbols(map: MlMap, categoryColors: Record<string, strin
   }
 }
 
-/** Icon size by zoom: small enough not to carpet the globe, full size close in. */
-export const ICON_SIZE_BY_ZOOM: any = ['interpolate', ['linear'], ['zoom'], 1, 0.42, 4, 0.58, 7, 0.78, 9, 0.92, 11, 1];
-export const SHIP_SIZE_BY_ZOOM: any = ['interpolate', ['linear'], ['zoom'], 1, 0.45, 5, 0.65, 8, 0.85, 11, 1.05];
+/** Aircraft are a fixed screen size, as on tar1090 / globe.adsbexchange.com: they do not
+    shrink as you zoom in. Only the whole-globe view draws them a little smaller. */
+export const ICON_SIZE_BY_ZOOM: any = ['interpolate', ['linear'], ['zoom'], 1, 0.8, 3.5, 1.05, 5, 1.2];
+export const SHIP_SIZE_BY_ZOOM: any = ['interpolate', ['linear'], ['zoom'], 1, 0.7, 5, 0.95, 8, 1.1, 11, 1.25];

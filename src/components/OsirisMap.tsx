@@ -30,6 +30,7 @@ import { registerSymbols, ICON_SIZE_BY_ZOOM, SHIP_SIZE_BY_ZOOM } from '@/lib/cly
 import { aircraftShape, altKey, shipKind, shipMoving } from '@/lib/clyde/symbols';
 import { AC_SHAPES } from '@/lib/clyde/ac-shapes';
 import ClydeLayers from '@/components/clyde/ClydeLayers';
+import RadioLayers from '@/components/radio/RadioLayers';
 import { CLYDE_CLICKABLE } from '@/lib/clyde/layer-ids';
 import { basemapFor, OVERLAYS } from '@/lib/clyde/basemaps';
 
@@ -83,6 +84,8 @@ interface OsirisMapProps {
   mapStyle?: string;
   /** Raster overlays from the map picker: key -> opacity (0 or absent = off). */
   overlays?: Record<string, number>;
+  /** Night style variant: 'clean' hides the basemap's lines, 'blank' its lines and labels. */
+  nightVariant?: 'clean' | 'blank' | null;
   sweepData?: any;
   scanTargets?: any[];
   demoMode?: boolean;
@@ -209,7 +212,7 @@ interface AlertPinFeature {
   properties: AlertPinProps;
 }
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, onLayerOff, mapStyle = 'dark', overlays = {}, sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, onTransitStatus, route = null, userLocation = null, followUser = false, onFollowInterrupt, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, onLayerOff, mapStyle = 'dark', overlays = {}, nightVariant = null, sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, onTransitStatus, route = null, userLocation = null, followUser = false, onFollowInterrupt, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -371,7 +374,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
        offset is a free, instant stand-in for longitude (15° an hour), so the
        fly-in to their city after the splash is a dive, not a spin round the
        planet. This used to open on Bulgaria at zoom 6.5 for everyone. */
-    const facingLng = Math.max(-180, Math.min(180, -new Date().getTimezoneOffset() / 4));
+    // Osiris - Oracle: face Scotland, where the fly-in lands.
+    const facingLng = -4.8;
     const baseOptions = {
       container,
       style: styleUrl,
@@ -2730,6 +2734,27 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     }
   }, [mapReady, mapStyle]);
 
+  // Night Clean / Night Blank: switch off the CARTO style's own lines (and labels), and back on again.
+  const nightHidden = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    try {
+      const want = new Set<string>();
+      if (nightVariant) {
+        for (const l of map.getStyle().layers as any[]) {
+          if (l.source !== 'carto' || l.id.startsWith('osiris')) continue;
+          if (l.type === 'line' || (nightVariant === 'blank' && l.type === 'symbol')) want.add(l.id);
+        }
+      }
+      for (const id of nightHidden.current) if (!want.has(id) && map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible');
+      for (const id of want) map.setLayoutProperty(id, 'visibility', 'none');
+      nightHidden.current = want;
+    } catch (e) {
+      console.warn('Night variant failed:', e);
+    }
+  }, [mapReady, nightVariant]);
+
   // Raster overlays (place names, roads, seamarks, rail, hillshade): over the base, under every data layer.
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -3528,6 +3553,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       {selectedSat && <SatelliteCard sat={selectedSat} onClose={clearSat} />}
       {mapReady && <MapControls mapRef={mapRef} onInteract={onFollowInterrupt} />}
       <ClydeLayers mapRef={mapRef} mapReady={mapReady} active={activeLayers} />
+      <RadioLayers mapRef={mapRef} mapReady={mapReady} active={activeLayers} />
       {mapReady && (activeLayers.wind || activeLayers.rain) && (
         <div className={DOCK}>
           {activeLayers.wind && <WindBar mapRef={mapRef} controls={!!activeLayers.wind_controls} particles={!!activeLayers.wind_particles} onOff={() => onLayerOff?.('wind')} />}

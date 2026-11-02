@@ -15,6 +15,9 @@ export interface Basemap {
 
 export const BASEMAPS: Basemap[] = [
   { key: 'dark', label: 'Osiris Night', group: 'Dark', tiles: [], maxzoom: 22, attribution: '' },
+  // The same night style with its lines (and labels) switched off: just land and sea.
+  { key: 'night-clean', label: 'Night Clean', group: 'Dark', tiles: [], maxzoom: 22, attribution: '' },
+  { key: 'night-blank', label: 'Night Blank', group: 'Dark', tiles: [], maxzoom: 22, attribution: '' },
   { key: 'esri-dark', label: 'Dark Grey', group: 'Dark', tiles: [ESRI + 'Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'], maxzoom: 16, attribution: '© Esri' },
   { key: 'light', label: 'Light Grey', group: 'Street', tiles: [ESRI + 'Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'], maxzoom: 16, attribution: '© Esri' },
   { key: 'street', label: 'Street', group: 'Street', tiles: [ESRI + 'World_Street_Map/MapServer/tile/{z}/{y}/{x}'], maxzoom: 19, attribution: '© Esri' },
@@ -31,7 +34,7 @@ export const BASEMAPS: Basemap[] = [
 ];
 
 export function basemapFor(key?: string | null): Basemap | null {
-  if (!key || key === 'dark') return null;
+  if (!key || key === 'dark' || key.startsWith('night-')) return null;
   // Older callers (and the OI assistant) pass 'satellite' or a raw tile URL for the Esri imagery.
   if (/^https?:/.test(key)) return BASEMAPS.find(b => b.key === 'satellite')!;
   return BASEMAPS.find(b => b.key === key) || null;

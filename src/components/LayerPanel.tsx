@@ -75,6 +75,18 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     ],
   },
   {
+    label: 'RADIO',
+    fullLabel: 'RADIO + SPACE',
+    icon: Satellite,
+    layers: [
+      { key: 'psk', label: 'PSK Reporter', description: 'Live spots · UK & IRL paths by band', dataKey: '' },
+      { key: 'psk_world', label: 'Worldwide Activity', description: 'Transmitting stations per grid', dataKey: '', parent: 'psk' },
+      { key: 'wx_sats', label: 'Weather Satellites', description: 'Live + passes over Greenock', dataKey: '' },
+      { key: 'ham_sats', label: 'ISS + Amateur Sats', description: 'Live + passes', dataKey: '' },
+      { key: 'sat_tracks', label: 'Tracks + Footprints', dataKey: '' },
+    ],
+  },
+  {
     label: 'WEATHER',
     fullLabel: 'WEATHER',
     icon: CloudSun,

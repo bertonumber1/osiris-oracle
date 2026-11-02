@@ -58,7 +58,11 @@ export default function MapPicker({ base, onBase, overlays, onOverlays, onView, 
                       {src
                         // eslint-disable-next-line @next/next/no-img-element
                         ? <img src={src} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-110" />
-                        : <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,#1b2433,#05070c_70%)]"><div className="absolute inset-0 opacity-40 [background-image:linear-gradient(rgba(0,229,255,.12)_1px,transparent_1px),linear-gradient(90deg,rgba(0,229,255,.12)_1px,transparent_1px)] [background-size:12px_12px]" /></div>}
+                        : <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,#1b2433,#05070c_70%)]">
+                            {b.key === 'dark' && <div className="absolute inset-0 opacity-40 [background-image:linear-gradient(rgba(0,229,255,.12)_1px,transparent_1px),linear-gradient(90deg,rgba(0,229,255,.12)_1px,transparent_1px)] [background-size:12px_12px]" />}
+                            {b.key === 'night-clean' && <span className="absolute left-2 top-1.5 font-mono text-[7px] tracking-[0.2em] text-white/35">NO LINES</span>}
+                            {b.key === 'night-blank' && <span className="absolute left-2 top-1.5 font-mono text-[7px] tracking-[0.2em] text-white/35">NO LINES · NO NAMES</span>}
+                          </div>}
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent px-1.5 pb-1 pt-3">
                         <span className={`block truncate text-[9px] font-mono tracking-[0.06em] ${on ? 'text-[var(--cyan-primary)]' : 'text-white/90'}`}>{b.label}</span>
                       </div>
