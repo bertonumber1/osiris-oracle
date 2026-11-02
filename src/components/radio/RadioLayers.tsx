@@ -1,8 +1,8 @@
 'use client';
 /* Radio layers on the Osiris map:
-   - PSK Reporter: live spots as great-circle arcs coloured by band (UK and
-     Ireland paths, and anything to or from our callsign), plus worldwide
-     transmitting activity per grid square.
+   - PSK Reporter: the entered callsign's spots as great-circle arcs coloured
+     by band, optionally everything within a chosen radius of IO75OW, plus
+     worldwide transmitting activity per grid square.
    - Satellites: weather birds, the ISS and the amateur fleet, live, with
      ground tracks, footprints and a pass predictor for Greenock. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -21,6 +21,26 @@ const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: 
 const fc = (features: GeoJSON.Feature[]): GeoJSON.FeatureCollection => ({ type: 'FeatureCollection', features });
 const KIND_COLOR: Record<string, string> = { wx: '#38bdf8', iss: '#fbbf24', ham: '#a3e635' };
 const PSK_MINUTES = 15;
+
+export interface PskData {
+  connected: boolean; rate: number; call: string; radiusKm: number;
+  home: { grid: string; lat: number; lon: number };
+  stats: { call: string; sent: number; heard: number; farKm: number; farCall: string; bands: string[] };
+  paths: any[]; activity: any[]; bandCount: Record<string, number>;
+}
+
+/** A circle of radius km round lat/lon, as a closed [lon, lat] ring. */
+function circle(lat: number, lon: number, km: number): [number, number][] {
+  const r = Math.PI / 180, ang = km / 6371, la0 = lat * r, lo0 = lon * r;
+  const ring: [number, number][] = [];
+  for (let b = 0; b <= 360; b += 4) {
+    const br = b * r;
+    const la = Math.asin(Math.sin(la0) * Math.cos(ang) + Math.cos(la0) * Math.sin(ang) * Math.cos(br));
+    const lo = lo0 + Math.atan2(Math.sin(br) * Math.sin(ang) * Math.cos(la0), Math.cos(ang) - Math.sin(la0) * Math.sin(la));
+    ring.push([lo / r, la / r]);
+  }
+  return ring;
+}
 
 function store<T>(key: string, fallback: T): T {
   try { const v = localStorage.getItem(key); return v ? (JSON.parse(v) as T) : fallback; } catch { return fallback; }
@@ -50,8 +70,10 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
   /* ── PSK state ── */
   const [call, setCall] = useState<string>(() => store('osiris.psk.call', 'MM7BVP'));
   const [bandsOff, setBandsOff] = useState<string[]>(() => store('osiris.psk.bandsOff', []));
-  const [psk, setPsk] = useState<{ connected: boolean; rate: number; paths: any[]; activity: any[]; bandCount: Record<string, number> } | null>(null);
-  useEffect(() => { try { localStorage.setItem('osiris.psk.call', JSON.stringify(call)); localStorage.setItem('osiris.psk.bandsOff', JSON.stringify(bandsOff)); } catch { /* storage blocked */ } }, [call, bandsOff]);
+  // Radius (km) round IO75OW whose spots are drawn as well as the callsign's; 0 = callsign only.
+  const [radius, setRadius] = useState<number>(() => store('osiris.psk.radius', 0));
+  const [psk, setPsk] = useState<PskData | null>(null);
+  useEffect(() => { try { localStorage.setItem('osiris.psk.call', JSON.stringify(call)); localStorage.setItem('osiris.psk.bandsOff', JSON.stringify(bandsOff)); localStorage.setItem('osiris.psk.radius', JSON.stringify(radius)); } catch { /* storage blocked */ } }, [call, bandsOff, radius]);
 
   /* ── Satellite state ── */
   const [defs, setDefs] = useState<SatDef[]>([]);
@@ -67,7 +89,7 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map || map.getSource('psk-arcs')) return;
-    for (const id of ['psk-world', 'psk-arcs', 'psk-ends', 'rs-foot', 'rs-track', 'rs-pass', 'rs-sat']) map.addSource(id, { type: 'geojson', data: EMPTY });
+    for (const id of ['psk-world', 'psk-ring', 'psk-arcs', 'psk-ends', 'rs-foot', 'rs-track', 'rs-pass', 'rs-sat']) map.addSource(id, { type: 'geojson', data: EMPTY });
     (map.getSource('psk-arcs') as any).setAttribution?.('Spots: <a href="https://pskreporter.info" target="_blank">PSK Reporter</a>');
     // Put them under the Clyde Watch layers when those are present, so aircraft and ships stay on top.
     const before = map.getLayer('clyde-wtr-links') ? 'clyde-wtr-links' : undefined;
@@ -78,6 +100,9 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
     add({ id: 'psk-world', type: 'circle', source: 'psk-world', paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, ['*', ['get', 'r'], 0.7], 6, ['*', ['get', 'r'], 1.6]],
       'circle-color': ['get', 'c'], 'circle-opacity': 0.5, 'circle-blur': 0.45 } });
+    add({ id: 'psk-ring', type: 'line', source: 'psk-ring', paint: { 'line-color': '#2ee6a6', 'line-opacity': 0.55, 'line-width': 1.2, 'line-dasharray': [3, 3] } });
+    add({ id: 'psk-ring-label', type: 'symbol', source: 'psk-ring', layout: { ...T, 'symbol-placement': 'line', 'text-field': ['get', 'label'], 'text-size': 9.5, 'text-letter-spacing': 0.15 },
+      paint: { 'text-color': '#2ee6a6', ...HALO } });
     add({ id: 'psk-arc-glow', type: 'line', source: 'psk-arcs', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: {
       'line-color': ['get', 'c'], 'line-width': ['case', ['==', ['get', 'me'], 1], 7, 4], 'line-blur': 4, 'line-opacity': ['*', ['get', 'op'], 0.22] } });
     add({ id: 'psk-arc', type: 'line', source: 'psk-arcs', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: {
@@ -104,7 +129,7 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
     const map = mapRef.current;
     if (!mapReady || !map?.getLayer('psk-arc')) return;
     const vis = (ids: string[], v: boolean) => ids.forEach(id => map.getLayer(id) && map.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none'));
-    vis(['psk-arc', 'psk-arc-glow', 'psk-ends'], pskOn);
+    vis(['psk-arc', 'psk-arc-glow', 'psk-ends', 'psk-ring', 'psk-ring-label'], pskOn);
     vis(['psk-world'], pskOn && !!active.psk_world);
     vis(['rs-sat', 'rs-sat-glow', 'rs-sat-label', 'rs-pass'], satsOn);
     vis(['rs-track', 'rs-foot', 'rs-foot-line'], satsOn && active.sat_tracks !== false);
@@ -113,12 +138,12 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
   /* ── PSK: poll our own server, which holds the MQTT feed ── */
   const bandsOffKey = bandsOff.join(',');
   useEffect(() => {
-    if (!mapReady || !pskOn) { setData('psk-arcs', EMPTY); setData('psk-ends', EMPTY); setData('psk-world', EMPTY); return; }
+    if (!mapReady || !pskOn) { setData('psk-arcs', EMPTY); setData('psk-ends', EMPTY); setData('psk-world', EMPTY); setData('psk-ring', EMPTY); return; }
     const ac = new AbortController();
     const load = async () => {
       if (document.hidden) return;
       try {
-        const r = await fetch(`/api/psk?minutes=${PSK_MINUTES}&call=${encodeURIComponent(call)}`, { signal: ac.signal, cache: 'no-store' });
+        const r = await fetch(`/api/psk?minutes=${PSK_MINUTES}&call=${encodeURIComponent(call)}&radius=${radius}`, { signal: ac.signal, cache: 'no-store' });
         if (r.ok) setPsk(await r.json());
       } catch { /* retry next tick */ }
     };
@@ -127,18 +152,16 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
     const quick = setTimeout(load, 4000);
     const iv = setInterval(load, 20000);
     return () => { ac.abort(); clearTimeout(quick); clearInterval(iv); };
-  }, [mapReady, pskOn, call, setData]);
+  }, [mapReady, pskOn, call, radius, setData]);
 
   useEffect(() => {
     if (!mapReady || !pskOn || !psk) return;
     const off = new Set(bandsOff);
-    const me = call.toUpperCase();
     const arcs: GeoJSON.Feature[] = [], ends: GeoJSON.Feature[] = [];
     for (const p of psk.paths) {
-      const [sla, slo, rla, rlo, band, snr, age, sc, rc, f, md] = p;
+      const [sla, slo, rla, rlo, band, snr, age, sc, rc, f, md, mine] = p;
       if (off.has(band)) continue;
       const c = BAND_COLOR[band] || '#94a3b8';
-      const mine = me && (sc === me || rc === me) ? 1 : 0;
       const op = +(Math.max(0.18, 1 - age / (PSK_MINUTES * 60)) * (mine ? 1 : 0.85)).toFixed(2);
       arcs.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: arc([sla, slo], [rla, rlo]) },
         properties: { c, op, me: mine, sc, rc, band, snr, age, f, md, km: Math.round(distanceKm([sla, slo], [rla, rlo])) } });
@@ -147,6 +170,8 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
     // Draw ours last so they sit on top.
     arcs.sort((a, b) => (a.properties as any).me - (b.properties as any).me);
     setData('psk-arcs', fc(arcs));
+    setData('psk-ring', psk.radiusKm ? fc([{ type: 'Feature', geometry: { type: 'LineString', coordinates: circle(psk.home.lat, psk.home.lon, psk.radiusKm) },
+      properties: { label: `${psk.home.grid} · ${psk.radiusKm} km` } }]) : EMPTY);
     setData('psk-ends', fc(ends));
     const max = Math.max(1, ...psk.activity.map(a => a[3] as number));
     setData('psk-world', fc(psk.activity.filter(a => !off.has(a[2])).map(([la, lo, b, n, calls]) => ({
@@ -279,7 +304,7 @@ export default function RadioLayers({ mapRef, mapReady, active }: Props) {
   return (
     <>
       {pskOn && (
-        <PskBar data={psk} call={call} onCall={setCall} bandsOff={bandsOff}
+        <PskBar data={psk} call={call} onCall={setCall} radius={radius} onRadius={setRadius} bandsOff={bandsOff}
           onToggleBand={b => setBandsOff(o => (o.includes(b) ? o.filter(x => x !== b) : [...o, b]))}
           onSolo={b => setBandsOff(BANDS.map(x => x.key).filter(k => k !== b))} onAll={() => setBandsOff([])} />
       )}

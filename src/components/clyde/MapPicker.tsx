@@ -16,7 +16,7 @@ interface Props {
   onClose: () => void;
 }
 
-const GROUPS = ['Dark', 'Street', 'Terrain', 'Marine', 'Imagery'] as const;
+const GROUPS = ['Dark', 'Plain', 'Street', 'Terrain', 'Marine', 'Imagery'] as const;
 
 export default function MapPicker({ base, onBase, overlays, onOverlays, onView, onKiosk, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);

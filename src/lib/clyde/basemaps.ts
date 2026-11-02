@@ -7,7 +7,7 @@ const GOOGLE = (lyr: string) => ['mt0', 'mt1', 'mt2', 'mt3'].map(s => `https://$
 const ABC = (u: string) => ['a', 'b', 'c'].map(s => u.replace('{s}', s));
 
 export interface Basemap {
-  key: string; label: string; group: 'Dark' | 'Street' | 'Terrain' | 'Marine' | 'Imagery';
+  key: string; label: string; group: 'Dark' | 'Plain' | 'Street' | 'Terrain' | 'Marine' | 'Imagery';
   tiles: string[]; maxzoom: number; attribution: string;
   /** Imagery reads a touch translucent so the night shade and glow layers still sit in it. */
   imagery?: boolean;
@@ -19,6 +19,11 @@ export const BASEMAPS: Basemap[] = [
   { key: 'night-clean', label: 'Night Clean', group: 'Dark', tiles: [], maxzoom: 22, attribution: '' },
   { key: 'night-blank', label: 'Night Blank', group: 'Dark', tiles: [], maxzoom: 22, attribution: '' },
   { key: 'esri-dark', label: 'Dark Grey', group: 'Dark', tiles: [ESRI + 'Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'], maxzoom: 16, attribution: '© Esri' },
+  // Plain: land and sea only, no roads, borders or place names.
+  { key: 'plain-shade-dark', label: 'Dark Relief', group: 'Plain', tiles: [ESRI + 'Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}'], maxzoom: 16, attribution: '© Esri' },
+  { key: 'plain-terrain', label: 'Terrain Base', group: 'Plain', tiles: [ESRI + 'World_Terrain_Base/MapServer/tile/{z}/{y}/{x}'], maxzoom: 13, attribution: '© Esri, USGS, NOAA' },
+  { key: 'plain-relief', label: 'Shaded Relief', group: 'Plain', tiles: [ESRI + 'World_Shaded_Relief/MapServer/tile/{z}/{y}/{x}'], maxzoom: 13, attribution: '© Esri, USGS' },
+  { key: 'plain-physical', label: 'Physical', group: 'Plain', tiles: [ESRI + 'World_Physical_Map/MapServer/tile/{z}/{y}/{x}'], maxzoom: 8, attribution: '© Esri, US NPS' },
   { key: 'light', label: 'Light Grey', group: 'Street', tiles: [ESRI + 'Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'], maxzoom: 16, attribution: '© Esri' },
   { key: 'street', label: 'Street', group: 'Street', tiles: [ESRI + 'World_Street_Map/MapServer/tile/{z}/{y}/{x}'], maxzoom: 19, attribution: '© Esri' },
   { key: 'groad', label: 'Google Roads', group: 'Street', tiles: GOOGLE('m'), maxzoom: 20, attribution: '© Google' },

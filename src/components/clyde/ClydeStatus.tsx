@@ -10,7 +10,7 @@ export interface SearchHit { key: string; label: string; sub: string; color: str
 
 export interface ClydeStats {
   adsb?: number; adsbOk?: boolean; adsbStale?: boolean;
-  aisLocal?: number; aisCommunity?: number; liveOk?: boolean;
+  aisLocal?: number; aisCommunity?: number; aisWorld?: number; liveOk?: boolean;
   aprs?: number; incidents?: number; lastPage?: number; sfrsSilentH?: number;
   wtr?: number; wtrTrunc?: boolean; wtrZoom?: boolean;
 }
@@ -99,8 +99,8 @@ export default function ClydeStatus({ stats: s, active: a, onSearch }: { stats: 
           title={s.adsbStale ? 'Every source failed: showing the last good picture' : 'Greenock Pi readsb + adsb.lol + airplanes.live + adsb.fi'} />
       )}
       {a.clyde_ais && (
-        <Item label="AIS" value={<>{s.aisLocal ?? '-'}<span className="text-[var(--text-muted)]"> / {s.aisCommunity ?? '-'}</span></>} ok={s.liveOk}
-          title="Heard on our aerial / from the community (AISHub)" />
+        <Item label="AIS" value={<>{s.aisLocal ?? '-'}<span className="text-[var(--text-muted)]"> / {s.aisCommunity ?? '-'}{s.aisWorld ? ` + ${s.aisWorld.toLocaleString()} world` : ''}</span></>} ok={s.liveOk}
+          title="Heard on our aerial / from the community near us (AISHub) + AISHub worldwide. Data: AISHub contributors" />
       )}
       {a.clyde_aprs && <Item label="APRS" value={s.aprs ?? '-'} ok={s.liveOk} />}
       {a.clyde_incidents && (

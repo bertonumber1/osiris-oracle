@@ -12,6 +12,10 @@ import * as maplibregl from 'maplibre-gl';
 import { aircraftShape, altKey, ALT_BANDS, ALT_GROUND, ALT_UNKNOWN, shipKind, shipMoving } from '@/lib/clyde/symbols';
 import { ICON_SIZE_BY_ZOOM, SHIP_SIZE_BY_ZOOM } from '@/lib/clyde/symbols-draw';
 import { AC_SHAPES } from '@/lib/clyde/ac-shapes';
+import { flightCategory, type FlightCategory } from '@/lib/flight-category';
+
+/** Which AVIATION switch governs each category. */
+const CAT_SWITCH: Record<FlightCategory, string> = { commercial: 'flights', private: 'private', jet: 'jets', military: 'military' };
 import { WTR_CATS } from '@/lib/clyde/layer-ids';
 import ClydeCard, { type ClydeSelection } from './ClydeCard';
 import ClydeStatus, { type ClydeStats, type SearchHit } from './ClydeStatus';
@@ -51,6 +55,8 @@ export default function ClydeLayers({ mapRef, mapReady, active }: Props) {
   const aircraft = useRef(new Map<string, Ac>());
   const trails = useRef(new Map<string, [number, number, string][]>());
   const vessels = useRef(new Map<number, any>());
+  // AISHub's worldwide snapshot outside our box (Clyde Watch /api/ais/world), mmsi -> vessel.
+  const world = useRef(new Map<number, any>());
   const aprs = useRef(new Map<string, any>());
   const incidents = useRef(new Map<number, any>());
   const dirty = useRef({ ships: false, aprs: false, inc: false });
@@ -96,8 +102,8 @@ export default function ClydeLayers({ mapRef, mapReady, active }: Props) {
     if (!mapReady || !map || map.getSource('clyde-ac')) return;
     map.addSource('clyde-rings', { type: 'geojson', data: EMPTY });
     for (const id of ['clyde-lx', 'clyde-wtr', 'clyde-wtr-links', 'clyde-nav', 'clyde-heat', 'clyde-stn', 'clyde-inc', 'clyde-aprs',
-      'clyde-ship-track', 'clyde-ship', 'clyde-ac-trail', 'clyde-ac', 'clyde-sel']) {
-      map.addSource(id, { type: 'geojson', data: EMPTY, ...(id === 'clyde-ship' ? { attribution: 'Data: <a href="https://www.aishub.net" target="_blank">AISHub contributors</a>' } : {}) });
+      'clyde-ship-world', 'clyde-ship-track', 'clyde-ship', 'clyde-ac-trail', 'clyde-ac', 'clyde-sel']) {
+      map.addSource(id, { type: 'geojson', data: EMPTY, ...(id === 'clyde-ship' || id === 'clyde-ship-world' ? { attribution: 'Data: <a href="https://www.aishub.net" target="_blank">AISHub contributors</a>' } : {}) });
     }
     const T = (field: any, size = 10) => ({ 'text-field': field, 'text-size': size, 'text-font': ['Open Sans Regular'], 'text-allow-overlap': false } as any);
     const HALO = { 'text-halo-color': 'rgba(0,0,0,0.85)', 'text-halo-width': 1.4 };
@@ -168,6 +174,10 @@ export default function ClydeLayers({ mapRef, mapReady, active }: Props) {
       'line-color': '#22d3ee', 'line-width': 2, 'line-opacity': 0.75 } });
     map.addLayer({ id: 'clyde-ship-ring', type: 'circle', source: 'clyde-ship', filter: ['has', 'ring'], paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 7, 11, 13], 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': ['get', 'ring'], 'circle-stroke-width': 2 } });
+    // AISHub worldwide (outside our box): below our own ships, a touch fainter, refreshed once a minute.
+    map.addLayer({ id: 'clyde-ship-world', type: 'symbol', source: 'clyde-ship-world', layout: {
+      'icon-image': ['get', 'icon'], 'icon-size': SHIP_SIZE_BY_ZOOM, 'icon-rotate': ['get', 'rot'], 'icon-rotation-alignment': 'map',
+      'icon-allow-overlap': true, 'icon-ignore-placement': true }, paint: { 'icon-opacity': 0.6 } });
     map.addLayer({ id: 'clyde-ship', type: 'symbol', source: 'clyde-ship', layout: {
       'icon-image': ['get', 'icon'], 'icon-size': SHIP_SIZE_BY_ZOOM, 'icon-rotate': ['get', 'rot'], 'icon-rotation-alignment': 'map',
       'icon-allow-overlap': true, 'icon-ignore-placement': true }, paint: { 'icon-opacity': ['get', 'op'] } });
@@ -201,6 +211,7 @@ export default function ClydeLayers({ mapRef, mapReady, active }: Props) {
     vis(['clyde-ac', 'clyde-ac-label', 'clyde-ac-ring'], on('clyde_adsb'));
     vis(['clyde-ac-trail'], on('clyde_adsb'));
     vis(['clyde-ship', 'clyde-ship-ring', 'clyde-ship-label', 'clyde-ship-track'], on('clyde_ais'));
+    vis(['clyde-ship-world'], on('clyde_ais') && on('clyde_ais_world'));
     vis(['clyde-aprs', 'clyde-aprs-label'], on('clyde_aprs'));
     vis(['clyde-inc', 'clyde-inc-pulse', 'clyde-inc-label'], on('clyde_incidents'));
     vis(['clyde-heat'], on('clyde_incidents') && on('clyde_incident_heat'));
@@ -244,8 +255,11 @@ export default function ClydeLayers({ mapRef, mapReady, active }: Props) {
         lat += (nm / 60) * Math.cos(r);
         lon += ((nm / 60) * Math.sin(r)) / Math.max(0.2, Math.cos((lat * Math.PI) / 180));
       }
+      // Osiris's AVIATION switches (Commercial / Private / Private Jets / Military) apply to our aircraft too.
+      const cat = flightCategory(p.raw);
+      if (a[CAT_SWITCH[cat]] === false) continue;
       const { shape } = aircraftShape({ category: p.raw.category, type: p.raw.t });
-      const ck = altKey(p.alt as any);
+      const ck = a.ac_colour_category ? `c-${cat}` : altKey(p.alt as any);
       const sq = String(p.raw.squawk || '');
       const emergency = sq === '7500' || sq === '7600' || sq === '7700' || (p.raw.emergency && p.raw.emergency !== 'none');
       const military = ((p.raw.dbFlags || 0) & 1) === 1;
@@ -356,7 +370,7 @@ export default function ClydeLayers({ mapRef, mapReady, active }: Props) {
     if (map) {
       const ids = [...vessels.current.keys()];
       // A literal list is checked per feature, so past a few thousand just stand Osiris's ships down.
-      const f: any = ids.length > 6000 ? ['==', 1, 0] : ids.length ? ['!', ['in', ['get', 'mmsi'], ['literal', ids]]] : null;
+      const f: any = ids.length > 6000 || world.current.size ? ['boolean', false] : ids.length ? ['!', ['in', ['get', 'mmsi'], ['literal', ids]]] : null;
       ['ship-dots', 'ship-label'].forEach(id => map.getLayer(id) && map.setFilter(id, f));
     }
     follow(selId != null ? feats.find(x => (x.properties as any).mmsi === selId) : undefined);
@@ -444,6 +458,51 @@ export default function ClydeLayers({ mapRef, mapReady, active }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, anyLive]);
 
+  /* ── AIS worldwide: Clyde Watch's AISHub snapshot, once a minute ── */
+  const worldOn = on('clyde_ais') && on('clyde_ais_world');
+  useEffect(() => {
+    if (!mapReady || !worldOn) {
+      world.current.clear(); setData('clyde-ship-world', EMPTY); setStats(s => ({ ...s, aisWorld: undefined }));
+      if (mapReady && on('clyde_ais')) drawShips();   // puts Osiris's own ships back where ours do not cover
+      return;
+    }
+    const ac = new AbortController();
+    const load = async () => {
+      if (document.hidden) return;
+      try {
+        const d = await getJson('ais/world', ac.signal);
+        const m = new Map<number, any>();
+        for (const [mmsi, lat, lon, cog, speed, heading, ship_type, name, dest, callsign] of d.rows || [])
+          m.set(mmsi, { mmsi, lat, lon, cog, speed, heading, ship_type, name, dest, callsign, community: true, world: true, source: 'aishub', last_ts: d.ts });
+        world.current = m;
+        drawWorld();
+        setStats(s => ({ ...s, aisWorld: m.size }));
+      } catch { /* next minute */ }
+    };
+    load();
+    const iv = setInterval(load, 60000);
+    return () => { ac.abort(); clearInterval(iv); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, worldOn]);
+
+  function drawWorld() {
+    const feats: GeoJSON.Feature[] = [];
+    for (const v of world.current.values()) {
+      if (vessels.current.has(v.mmsi)) continue;
+      const course = v.cog ?? v.heading;
+      const moving = shipMoving(v.speed, course);
+      feats.push(pt(v.lon, v.lat, { mmsi: v.mmsi, name: v.name || String(v.mmsi), icon: `ship:${shipKind(v.ship_type)}:${moving ? 'm' : 's'}`, rot: moving ? course : 0 }));
+    }
+    setData('clyde-ship-world', fc(feats));
+    // Worldwide cover makes Osiris's own (hotspot-only) ships redundant.
+    const map = mapRef.current;
+    if (map && feats.length) ['ship-dots', 'ship-label'].forEach(id => map.getLayer(id) && map.setFilter(id, ['boolean', false]));
+  }
+
+  // Redraw at once when an AVIATION switch or the colour mode changes (the glide timer would take up to a second).
+  useEffect(() => { if (mapReady && on('clyde_adsb')) drawAircraft(); },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mapReady, active.flights, active.private, active.jets, active.military, active.ac_colour_category, drawAircraft]);
   useEffect(() => { if (mapReady) { if (on('clyde_ais')) drawShips(); else setData('clyde-ship', EMPTY); } },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [mapReady, active.clyde_ais, active.clyde_ais_community, active.clyde_ais_labels, sel]);
@@ -624,7 +683,7 @@ export default function ClydeLayers({ mapRef, mapReady, active }: Props) {
       const L = f.layer.id;
       let s: ClydeSelection | null = null;
       if (L === 'clyde-ac') { const a = aircraft.current.get(p.hex); if (a) s = { kind: 'ac', id: p.hex, data: a.raw }; }
-      else if (L === 'clyde-ship') { const v = vessels.current.get(Number(p.mmsi)); if (v) s = { kind: 'ship', id: String(p.mmsi), data: v }; }
+      else if (L === 'clyde-ship' || L === 'clyde-ship-world') { const v = vessels.current.get(Number(p.mmsi)) || world.current.get(Number(p.mmsi)); if (v) s = { kind: 'ship', id: String(p.mmsi), data: v }; }
       else if (L === 'clyde-aprs') { const a = aprs.current.get(p.name); if (a) s = { kind: 'aprs', id: p.name, data: a }; }
       else if (L === 'clyde-inc') { const r = incidents.current.get(Number(p.id)); if (r) s = { kind: 'incident', id: String(p.id), data: r }; }
       else if (L === 'clyde-stn') {
@@ -636,7 +695,7 @@ export default function ClydeLayers({ mapRef, mapReady, active }: Props) {
       if (s) pick(s, f.geometry?.coordinates);
     };
     const names: Record<string, (p: any) => string> = {
-      'clyde-ac': p => p.cs, 'clyde-ship': p => p.name, 'clyde-aprs': p => p.name, 'clyde-inc': p => p.label,
+      'clyde-ac': p => p.cs, 'clyde-ship': p => p.name, 'clyde-ship-world': p => p.name, 'clyde-aprs': p => p.name, 'clyde-inc': p => p.label,
       'clyde-stn': p => p.label, 'clyde-wtr': p => p.label, 'clyde-nav-beacon': p => p.id, 'clyde-nav-field': p => p.id,
     };
     const enter = (e: any) => {

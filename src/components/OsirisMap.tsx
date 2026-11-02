@@ -30,6 +30,7 @@ import { registerSymbols, ICON_SIZE_BY_ZOOM, SHIP_SIZE_BY_ZOOM } from '@/lib/cly
 import { aircraftShape, altKey, shipKind, shipMoving } from '@/lib/clyde/symbols';
 import { AC_SHAPES } from '@/lib/clyde/ac-shapes';
 import ClydeLayers from '@/components/clyde/ClydeLayers';
+import ScannerDock from '@/components/clyde/ScannerDock';
 import RadioLayers from '@/components/radio/RadioLayers';
 import { CLYDE_CLICKABLE } from '@/lib/clyde/layer-ids';
 import { basemapFor, OVERLAYS } from '@/lib/clyde/basemaps';
@@ -3554,6 +3555,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       {mapReady && <MapControls mapRef={mapRef} onInteract={onFollowInterrupt} />}
       <ClydeLayers mapRef={mapRef} mapReady={mapReady} active={activeLayers} />
       <RadioLayers mapRef={mapRef} mapReady={mapReady} active={activeLayers} />
+      <ScannerDock mapRef={mapRef} mapReady={mapReady} active={activeLayers} onClose={() => onLayerOff?.('scanners')} />
       {mapReady && (activeLayers.wind || activeLayers.rain) && (
         <div className={DOCK}>
           {activeLayers.wind && <WindBar mapRef={mapRef} controls={!!activeLayers.wind_controls} particles={!!activeLayers.wind_particles} onOff={() => onLayerOff?.('wind')} />}

@@ -1,6 +1,6 @@
 /* Clyde Watch layer ids that take a click, so Osiris's satellite picker defers to them. */
 export const CLYDE_CLICKABLE = [
-  'clyde-ac', 'clyde-ship', 'clyde-aprs', 'clyde-inc', 'clyde-stn', 'clyde-wtr', 'clyde-nav-beacon', 'clyde-nav-field', 'clyde-lx',
+  'clyde-ac', 'clyde-ship', 'clyde-ship-world', 'clyde-aprs', 'clyde-inc', 'clyde-stn', 'clyde-wtr', 'clyde-nav-beacon', 'clyde-nav-field', 'clyde-lx',
 ];
 
 /** The WTR categories, in panel order, with Clyde Watch's colours. */

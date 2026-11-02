@@ -28,3 +28,17 @@ export const BANDS: { key: string; color: string }[] = [
   { key: '2m', color: '#f1f5f9' },
 ];
 export const BAND_COLOR: Record<string, string> = Object.fromEntries(BANDS.map(b => [b.key, b.color]));
+
+/** Amateur band for a frequency in Hz, as PSK Reporter names them ('20m'), or '' if outside the bands we show. */
+const BAND_EDGES: [number, number, string][] = [
+  [1.8e6, 2.0e6, '160m'], [3.5e6, 4.0e6, '80m'], [5.06e6, 5.45e6, '60m'], [7.0e6, 7.3e6, '40m'], [10.1e6, 10.15e6, '30m'],
+  [14.0e6, 14.35e6, '20m'], [18.068e6, 18.168e6, '17m'], [21.0e6, 21.45e6, '15m'], [24.89e6, 24.99e6, '12m'],
+  [28.0e6, 29.7e6, '10m'], [50e6, 54e6, '6m'], [70e6, 71e6, '4m'], [144e6, 148e6, '2m'],
+];
+export function freqToBand(hz: number): string {
+  for (const [lo, hi, b] of BAND_EDGES) if (hz >= lo && hz <= hi) return b;
+  return '';
+}
+
+/** Our station's locator: the radius filter on the PSK layer is measured from its centre. */
+export const HOME_GRID = 'IO75OW';

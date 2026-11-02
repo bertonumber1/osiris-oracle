@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useState } from 'react';
+import { Fragment, memo, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plane, Satellite, Sun, AlertTriangle, Camera,
@@ -43,6 +43,10 @@ interface LayerDef {
   /** Key of the layer this one modifies. Renders indented beneath it, and reads
    *  as inert while that parent is off — it has nothing to act on. */
   parent?: string;
+  /** Drawn as one chip in a compact row under the parent instead of a full row (long filter lists). */
+  chip?: boolean;
+  /** Chip colour. */
+  color?: string;
 }
 
 interface LayerGroupDef {
@@ -58,18 +62,21 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     fullLabel: 'CLYDE WATCH',
     icon: Radio,
     layers: [
-      { key: 'clyde_adsb', label: 'Our ADS-B', description: 'Greenock Pi + community feeds · live', dataKey: '' },
+      { key: 'clyde_adsb', label: 'Our ADS-B', description: 'Greenock Pi + community · AVIATION switches apply', dataKey: '' },
       { key: 'clyde_adsb_labels', label: 'Callsigns', dataKey: '', parent: 'clyde_adsb' },
       { key: 'clyde_adsb_trails', label: 'Trails', description: 'Coloured by altitude', dataKey: '', parent: 'clyde_adsb' },
-      { key: 'clyde_ais', label: 'Our AIS', description: 'Local aerial + AISHub · live', dataKey: '' },
+      { key: 'clyde_ais', label: 'Our AIS', description: 'Local aerial + AISHub worldwide · live', dataKey: '' },
       { key: 'clyde_ais_community', label: 'Community Vessels', dataKey: '', parent: 'clyde_ais' },
+      { key: 'clyde_ais_world', label: 'Worldwide', description: 'AISHub · every minute', dataKey: '', parent: 'clyde_ais' },
       { key: 'clyde_ais_labels', label: 'Ship Names', dataKey: '', parent: 'clyde_ais' },
       { key: 'clyde_aprs', label: 'APRS', description: 'APRS-IS within 300 km', dataKey: '' },
       { key: 'clyde_incidents', label: 'SFRS Incidents', description: 'Pager decodes · last 30 days', dataKey: '' },
       { key: 'clyde_incident_heat', label: 'Heatmap', description: 'All history', dataKey: '', parent: 'clyde_incidents' },
       { key: 'clyde_stations', label: 'SFRS Stations', dataKey: '' },
       { key: 'clyde_wtr', label: 'WTR Spectrum', description: 'Ofcom licences · zoom 8+', dataKey: '' },
-      ...WTR_CATS.map(c => ({ key: `wtr_${c.key}`, label: c.label, dataKey: '', parent: 'clyde_wtr' })),
+      ...WTR_CATS.map(c => ({ key: `wtr_${c.key}`, label: c.label, dataKey: '', parent: 'clyde_wtr', chip: true, color: c.color })),
+      { key: 'scanners', label: 'Scanners', description: 'SDS200E + 785XLT dock · listen + control', dataKey: '' },
+      { key: 'scanner_hits', label: 'Hits on Map', description: 'SDS200E hit on its licensed site', dataKey: '', parent: 'scanners' },
       { key: 'clyde_rings', label: 'Range Rings', description: '25-200 NM round Greenock', dataKey: '' },
       { key: 'clyde_navaids', label: 'Aero Navaids', description: 'Beacons + aerodrome frequencies', dataKey: '' },
     ],
@@ -79,7 +86,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     fullLabel: 'RADIO + SPACE',
     icon: Satellite,
     layers: [
-      { key: 'psk', label: 'PSK Reporter', description: 'Live spots · UK & IRL paths by band', dataKey: '' },
+      { key: 'psk', label: 'PSK Reporter', description: 'Your callsign\'s spots · radius round IO75OW', dataKey: '' },
       { key: 'psk_world', label: 'Worldwide Activity', description: 'Transmitting stations per grid', dataKey: '', parent: 'psk' },
       { key: 'wx_sats', label: 'Weather Satellites', description: 'Live + passes over Greenock', dataKey: '' },
       { key: 'ham_sats', label: 'ISS + Amateur Sats', description: 'Live + passes', dataKey: '' },
@@ -105,7 +112,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     fullLabel: 'AVIATION',
     icon: Plane,
     layers: [
-      { key: 'flights', label: 'Commercial', dataKey: 'commercial_flights' },
+      { key: 'flights', label: 'Commercial', description: 'Airlines + cargo · every feed, ours too', dataKey: 'commercial_flights' },
       { key: 'private', label: 'Private', dataKey: 'private_flights' },
       { key: 'jets', label: 'Private Jets', dataKey: 'private_jets' },
       { key: 'military', label: 'Military', dataKey: 'military_flights' },
@@ -117,7 +124,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     fullLabel: 'MARITIME',
     icon: Ship,
     layers: [
-      { key: 'maritime', label: 'Maritime / Naval', dataKey: 'maritime_ships,maritime_ports,maritime_chokepoints' },
+      { key: 'maritime', label: 'Maritime / Naval', description: 'aisstream hotspots + ports · ours win where both', dataKey: 'maritime_ships,maritime_ports,maritime_chokepoints' },
       { key: 'sdk_sea', label: 'Maritime Lines', dataKey: 'sdk_entities' },
     ],
   },
@@ -319,6 +326,28 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
     return found ? total : null;
   };
 
+  /** The compact chip row for a parent's chip sub-layers (e.g. the WTR categories). */
+  const chipRow = (group: LayerGroupDef, parentKey: string) => {
+    const chips = group.layers.filter(l => l.chip && l.parent === parentKey);
+    if (!chips.length) return null;
+    const dormant = !activeLayers[parentKey];
+    return (
+      <div key={`${parentKey}-chips`} className={`flex flex-wrap gap-1 pb-1.5 pl-[22px] pr-1 ${dormant ? 'pointer-events-none opacity-40' : ''}`}>
+        {chips.map(c => {
+          const on = activeLayers[c.key] !== false;
+          return (
+            <button key={c.key} type="button" onClick={() => setActiveLayers((prev: any) => ({ ...prev, [c.key]: prev[c.key] === false }))}
+              aria-pressed={on} title={`${c.label}: click to ${on ? 'hide' : 'show'}`}
+              className={`flex items-center gap-1 rounded border px-1.5 py-[3px] font-mono text-[9px] tracking-wide transition-colors ${on ? 'border-white/15 bg-white/[0.06] text-white/75' : 'border-white/[0.06] text-white/30 line-through'}`}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color, opacity: on ? 1 : 0.35 }} />
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
   /* ── MOBILE ── */
   if (isMobile) {
     return (
@@ -330,12 +359,13 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
             </div>
             <div className="flex flex-col gap-1">
               {group.layers.map((layer) => {
+                if (layer.chip) return null;
                 const isLayerActive = activeLayers[layer.key];
                 const count = getCount(layer.dataKey, layer.catKey);
                 const dormant = !!layer.parent && !activeLayers[layer.parent];
                 return (
+                  <Fragment key={layer.key}>
                   <button
-                    key={layer.key}
                     onClick={() => toggle(layer.key)}
                     aria-pressed={!!isLayerActive}
                     aria-label={layer.label}
@@ -353,6 +383,8 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
                       </span>
                     )}
                   </button>
+                  {chipRow(group, layer.key)}
+                  </Fragment>
                 );
               })}
               {group.label === 'DISPLAY' && terrainDetails}
@@ -519,13 +551,14 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
                     </div>
                     <div className="flex flex-col gap-0.5">
                       {group.layers.map((layer) => {
+                        if (layer.chip) return null;
                         const isLayerActive = activeLayers[layer.key];
                         const count = getCount(layer.dataKey, layer.catKey);
                         const dormant = !!layer.parent && !activeLayers[layer.parent];
 
                         return (
+                          <Fragment key={layer.key}>
                           <button
-                            key={layer.key}
                             onClick={() => toggle(layer.key)}
                             aria-pressed={!!isLayerActive}
                             aria-label={layer.label}
@@ -544,6 +577,8 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
                               </span>
                             )}
                           </button>
+                          {chipRow(group, layer.key)}
+                          </Fragment>
                         );
                       })}
                       {group.label === 'DISPLAY' && terrainDetails}
